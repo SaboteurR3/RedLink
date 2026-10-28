@@ -1,0 +1,137 @@
+# Production-safe defaults. Anything environment-specific comes from environment variables;
+# developer conveniences live in application-local.yml (activate with the "local" profile).
+spring:
+  application:
+    name: redlink-mission-control
+  datasource:
+    url: ${MISSION_CONTROL_DB_URL:jdbc:postgresql://localhost:5432/mission_control}
+    username: ${MISSION_CONTROL_DB_USERNAME:mission_control}
+    # No default on purpose: the app must not start with a guessable password outside "local".
+    password: ${MISSION_CONTROL_DB_PASSWORD}
+  jpa:
+    # Keep transactions inside the service layer; no lazy loading during view rendering.
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema; Hibernate only checks that entities match it.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    locations: classpath:db/migration
+  mvc:
+    problemdetails:
+      enabled: true
+  jackson:
+    mapper:
+      # Jackson 3 sorts properties alphabetically by default; keep declaration order instead, so a
+      # problem reads type, title, status, detail, instance as in RFC 9457.
+      sort-properties-alphabetically: false
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+springdoc:
+  # Only the public API; the link endpoints (/dsn) are machine-to-machine and stay undocumented.
+  paths-to-match: /api/**
+  api-docs:
+    # Set to false to hide the API description in an environment.
+    enabled: true
+  swagger-ui:
+    operations-sorter: method
+    tags-sorter: alpha
+
+redlink:
+  commands:
+    # Retry-After on 202: when polling a new command is first worthwhile.
+    retry-after: 5s
+  idempotency:
+    # How long an Idempotency-Key is remembered; afterwards it may be reused for a new request.
+    retention: 24h
+  webhooks:
+    dispatcher-enabled: true
+    # SSRF protection: only https and public addresses. Never relax these outside development.
+    allow-http: false
+    allow-private-hosts: false
+    max-per-user: 10
+    max-attempts: 8
+    poll-interval: 1s
+    batch-size: 20
+    lease: 30s
+    initial-backoff: 2s
+    max-backoff: 5m
+    connect-timeout: 3s
+    read-timeout: 5s
+  events:
+    # SSE: keep-alive comments so proxies don't drop idle streams
+    heartbeat: 15s
+    # Streams are closed after this; EventSource reconnects and resumes with Last-Event-ID.
+    emitter-timeout: 30m
+    max-subscribers: 500
+    # Resuming further back than this many events gets a "reset" snapshot instead.
+    replay-limit: 500
+    retention: 24h
+    # Single-use stream tickets for browsers (EventSource cannot send Authorization headers)
+    ticket-ttl: 30s
+  dsn:
+    # Relay-orbiter passes: the uplink transmits only while a window is open (from the Unix epoch).
+    windows:
+      enabled: false
+      every: 2m
+      duration: 45s
+    # During a solar conjunction the downlink answers 503 with this Retry-After.
+    conjunction-retry-after: 30s
+  uplink:
+    # rover-sim base URL (no default: must be configured outside `local`)
+    rover-url: ${REDLINK_ROVER_URL:}
+    enabled: true
+    # A QUEUED command waits this long before it is transmitted: the last chance to cancel.
+    queue-hold: 5s
+    # Simulated light time Earth → Mars. Real Mars: 3–22 minutes; short for demos.
+    one-way-delay: 10s
+    poll-interval: 500ms
+    batch-size: 20
+    # A claimed packet stays reserved this long; must exceed connect-timeout + read-timeout.
+    lease: 30s
+    initial-backoff: 1s
+    max-backoff: 60s
+    connect-timeout: 2s
+    read-timeout: 5s
+  security:
+    jwt:
+      # base64, at least 32 bytes: openssl rand -base64 32
+      secret: ${REDLINK_JWT_SECRET:}
+      issuer: redlink-mission-control
+      audience: redlink-api
+      ttl: 15m
+    login-throttle:
+      max-failures: 5
+      window: 15m
+    cors:
+      # Comma-separated exact origins, e.g. https://redlink.example.org. Empty = no browser access.
+      allowed-origins: ${REDLINK_CORS_ALLOWED_ORIGINS:}
+  link:
+    # Shared with rover-sim. base64, at least 32 bytes. Empty default: startup validation reports it missing.
+    secret: ${REDLINK_LINK_SECRET:}
+    signature-tolerance: 5m
+    max-packet-size: 5MB
+
+server:
+  port: 8080
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-exception: false
+    include-binding-errors: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true

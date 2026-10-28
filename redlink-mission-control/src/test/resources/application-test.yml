@@ -1,0 +1,27 @@
+# Test-only values; activated with @ActiveProfiles("test").
+redlink:
+  security:
+    jwt:
+      secret: dGVzdC1vbmx5LWp3dC1zZWNyZXQtMzItYnl0ZXMtbG9uZyE=
+    cors:
+      allowed-origins: http://localhost:5173
+  link:
+    secret: dGVzdC1vbmx5LWxpbmstc2VjcmV0LTMyLWJ5dGVzLWxvbmc=
+    max-packet-size: 1KB
+  uplink:
+    # Tests drive UplinkTransmitter / UplinkDispatcher themselves; UplinkIT points this at a stub rover.
+    enabled: false
+    rover-url: http://localhost:9
+    connect-timeout: 1s
+    read-timeout: 2s
+  events:
+    # Small, so the "too far behind → reset" path is easy to test.
+    replay-limit: 3
+  webhooks:
+    # Tests drive WebhookDispatcher themselves and deliver to a stub on 127.0.0.1; the SSRF rules
+    # themselves are unit-tested in WebhookUrlPolicyTest and checked strictly in WebhookSsrfIT.
+    dispatcher-enabled: false
+    allow-http: true
+    allow-private-hosts: true
+    initial-backoff: 1s
+    max-attempts: 3

@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.2</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <groupId>ge.tsu.redlink</groupId>
+    <artifactId>redlink-pom</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>RedLink</name>
+    <description>Asynchronous REST platform for commanding a simulated Mars rover over a delayed deep-space link</description>
+
+    <properties>
+        <java.version>17</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <!-- 3.1.x is built against Spring Boot 4.1 -->
+        <springdoc.version>3.1.1</springdoc.version>
+    </properties>
+
+    <modules>
+        <module>redlink-contract</module>
+        <module>redlink-mission-control</module>
+        <module>redlink-rover-sim</module>
+    </modules>
+
+    <!-- Lombok removes boilerplate at compile time (loggers, constructors for injection, entity
+         getters). Compile-only: it is never part of a built jar. Conventions in AGENTS.md. -->
+    <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>ge.tsu.redlink</groupId>
+                <artifactId>redlink-contract</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <!-- Explicit, because JDK 23+ no longer discovers annotation processors on
+                             the classpath by default. -->
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-build-environment</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[17,)</version>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.9,)</version>
+                                </requireMavenVersion>
+                                <banDuplicatePomDependencyVersions/>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Unit tests (*Test) run in `test` via surefire; integration tests (*IT) need a
+                 database and run in `verify` via failsafe (executions come from Boot's parent). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!-- `./mvnw verify -Plocal-db`: run integration tests against the locally installed
+             PostgreSQL instead of a Testcontainers one (for machines without a working Docker).
+             Each app uses schema `it` inside its own database, so dev data is never touched.
+             Apps define it.local-db.name / .username / .password. -->
+        <profile>
+            <id>local-db</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <redlink.it.external-db>true</redlink.it.external-db>
+                                <spring.datasource.url>jdbc:postgresql://localhost:5432/${it.local-db.name}?currentSchema=it</spring.datasource.url>
+                                <spring.datasource.username>${it.local-db.username}</spring.datasource.username>
+                                <spring.datasource.password>${it.local-db.password}</spring.datasource.password>
+                                <spring.flyway.default-schema>it</spring.flyway.default-schema>
+                                <spring.flyway.schemas>it</spring.flyway.schemas>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

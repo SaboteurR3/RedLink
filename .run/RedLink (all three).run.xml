@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="RedLink (all three)" type="CompoundRunConfigurationType">
+    <toRun name="1 mission-control (local)" type="Application" />
+    <toRun name="2 rover-sim (local)" type="Application" />
+    <toRun name="3 frontend (npm run dev)" type="js.build_tools.npm" />
+    <method v="2" />
+  </configuration>
+</component>

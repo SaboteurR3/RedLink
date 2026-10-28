@@ -1,0 +1,17 @@
+# Local development only (docker-compose Postgres). Never activate in a shared environment:
+# every secret below is public because it is in the repository.
+spring:
+  datasource:
+    password: ${ROVER_DB_PASSWORD:rover_dev}
+
+redlink:
+  link:
+    # Must match redlink-mission-control's application-local.yml
+    secret: ${REDLINK_LINK_SECRET:7Ibb/ZA3YkSvPPupTTMTCD7dUEJFr3pPnkuzbTiI7Hw=}
+  downlink:
+    earth-url: ${REDLINK_EARTH_URL:http://localhost:8080}
+
+management:
+  endpoint:
+    health:
+      show-details: always

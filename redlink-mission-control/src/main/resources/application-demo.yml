@@ -1,0 +1,6 @@
+# The Docker Compose demo (ticket 20). Seeds viewer / operator / director with one password, which
+# must be given in the environment. The empty default is deliberate: an unresolved ${...} would
+# otherwise be bound literally (and become a known password); empty fails @NotBlank at startup.
+redlink:
+  dev-users:
+    password: ${REDLINK_DEMO_USERS_PASSWORD:}

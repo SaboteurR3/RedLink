@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="2 rover-sim (local)" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="ge.tsu.redlink.roversim.RoverSimApplication" />
+    <module name="redlink-rover-sim" />
+    <envs>
+      <env name="SPRING_PROFILES_ACTIVE" value="local" />
+    </envs>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

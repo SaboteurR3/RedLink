@@ -1,0 +1,16 @@
+# Test-only values; activated with @ActiveProfiles("test").
+redlink:
+  link:
+    secret: dGVzdC1vbmx5LWxpbmstc2VjcmV0LTMyLWJ5dGVzLWxvbmc=
+  rover:
+    # Tests drive CommandStepper themselves with a controllable clock.
+    executor-enabled: false
+    events:
+      # Off: tests that need random events turn them on and script the dice.
+      enabled: false
+  downlink:
+    # Tests drive DownlinkDispatcher themselves; DownlinkIT points this at a stub Earth.
+    dispatcher-enabled: false
+    earth-url: http://localhost:9
+    connect-timeout: 1s
+    read-timeout: 2s

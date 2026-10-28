@@ -1,0 +1,82 @@
+# Production-safe defaults. Anything environment-specific comes from environment variables;
+# developer conveniences live in application-local.yml (activate with the "local" profile).
+spring:
+  application:
+    name: redlink-rover-sim
+  datasource:
+    url: ${ROVER_DB_URL:jdbc:postgresql://localhost:5432/rover}
+    username: ${ROVER_DB_USERNAME:rover}
+    # No default on purpose: the app must not start with a guessable password outside "local".
+    password: ${ROVER_DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    locations: classpath:db/migration
+  mvc:
+    problemdetails:
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+redlink:
+  link:
+    # Shared with mission-control. base64, at least 32 bytes: openssl rand -base64 32
+    # Empty default: startup validation then reports it as missing.
+    secret: ${REDLINK_LINK_SECRET:}
+    signature-tolerance: 5m
+    max-packet-size: 5MB
+    # Simulated light time Mars → Earth. Real Mars: 3–22 minutes; short for demos.
+    one-way-delay: 10s
+  downlink:
+    # mission-control base URL (no default: must be configured outside `local`)
+    earth-url: ${REDLINK_EARTH_URL:}
+    dispatcher-enabled: true
+    poll-interval: 500ms
+    batch-size: 20
+    # A claimed packet stays reserved this long; must exceed connect-timeout + read-timeout.
+    lease: 30s
+    # Retry delays double from initial-backoff up to max-backoff, forever (store-and-forward).
+    initial-backoff: 1s
+    max-backoff: 60s
+    connect-timeout: 2s
+    read-timeout: 5s
+  rover:
+    executor-enabled: true
+    tick: 250ms
+    # Wait this long for a missing sequence number before skipping it.
+    reorder-timeout: 30s
+    # Real time per simulated charging minute.
+    charge-minute: 1s
+    # Random events on Mars.
+    events:
+      enabled: true
+      weather-interval: 10s
+      dust-storm-chance-per-minute: 0.05
+      dust-storm-duration: 2m
+      wheel-stuck-chance-per-meter: 0.01
+
+server:
+  port: 8081
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-exception: false
+    include-binding-errors: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true

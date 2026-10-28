@@ -1,0 +1,10 @@
+# Keep the build context small and free of secrets and local build output.
+.env
+.git
+.idea
+**/target
+**/node_modules
+frontend/dist
+frontend/.vite
+*.iml
+docs

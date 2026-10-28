@@ -1,0 +1,74 @@
+# The whole system with one command (ticket 20). Copy .env.example to .env and set the values, then:
+#   docker compose up --build        → http://localhost:8088
+# Only the frontend is published. Both apps and the database are reachable only on the internal
+# network, so the HMAC link endpoints (/flight, /dsn) are not exposed at all.
+name: redlink
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      MISSION_CONTROL_DB_PASSWORD: ${MISSION_CONTROL_DB_PASSWORD:?set MISSION_CONTROL_DB_PASSWORD in .env}
+      ROVER_DB_PASSWORD: ${ROVER_DB_PASSWORD:?set ROVER_DB_PASSWORD in .env}
+    ports:
+      # For tools on this machine (psql, IntelliJ) only: bound to localhost, not to the network.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      # Runs once on an empty volume: one database and one login role per service.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mission-control:
+    build:
+      context: .
+      dockerfile: redlink-mission-control/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: demo
+      MISSION_CONTROL_DB_URL: jdbc:postgresql://postgres:5432/mission_control
+      MISSION_CONTROL_DB_PASSWORD: ${MISSION_CONTROL_DB_PASSWORD:?}
+      REDLINK_JWT_SECRET: ${REDLINK_JWT_SECRET:?set REDLINK_JWT_SECRET in .env}
+      REDLINK_LINK_SECRET: ${REDLINK_LINK_SECRET:?set REDLINK_LINK_SECRET in .env}
+      REDLINK_DEMO_USERS_PASSWORD: ${REDLINK_DEMO_USERS_PASSWORD:?set REDLINK_DEMO_USERS_PASSWORD in .env}
+      REDLINK_ROVER_URL: http://rover-sim:8081
+      # Optional demo knobs (see SPEC §4): relay windows.
+      REDLINK_DSN_WINDOWS_ENABLED: ${REDLINK_DSN_WINDOWS_ENABLED:-false}
+
+  rover-sim:
+    build:
+      context: .
+      dockerfile: redlink-rover-sim/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ROVER_DB_URL: jdbc:postgresql://postgres:5432/rover
+      ROVER_DB_PASSWORD: ${ROVER_DB_PASSWORD:?}
+      REDLINK_LINK_SECRET: ${REDLINK_LINK_SECRET:?}
+      # Store-and-forward: if mission-control is not up yet, telemetry waits and is retried.
+      REDLINK_EARTH_URL: http://mission-control:8080
+      REDLINK_ROVER_EVENTS_ENABLED: ${REDLINK_ROVER_EVENTS_ENABLED:-true}
+
+  frontend:
+    build:
+      context: frontend
+    restart: unless-stopped
+    depends_on:
+      - mission-control
+    ports:
+      - "127.0.0.1:8088:80"
+
+volumes:
+  postgres_data:

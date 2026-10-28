@@ -3,6 +3,7 @@ package ge.tsu.redlink.roversim.events;
 import ge.tsu.redlink.contract.command.CommandPacket;
 import ge.tsu.redlink.contract.command.RoverCommand;
 import ge.tsu.redlink.contract.rover.Heading;
+import ge.tsu.redlink.contract.rover.MarsClock;
 import ge.tsu.redlink.roversim.MutableClock;
 import ge.tsu.redlink.roversim.MutableClockConfiguration;
 import ge.tsu.redlink.roversim.TestcontainersConfiguration;
@@ -27,9 +28,10 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 /**
- * Dust storms and stuck wheels against real PostgreSQL, with scripted dice: a roll below the chance
+ * Dust storms, stuck wheels and solar charging through the sol, against real PostgreSQL, with scripted dice: a roll below the chance
  * makes the event happen, an empty script means "nothing happens".
  */
 @SpringBootTest
@@ -43,7 +45,10 @@ import static org.assertj.core.api.Assertions.assertThat;
         "redlink.rover.events.wheel-stuck-chance-per-meter=0.5"})
 class RandomEventsIT {
 
+    /** T0 is midnight on the Mars clock; these are the same sol's noon and sunset. */
     private static final Instant T0 = MutableClockConfiguration.T0;
+    private static final Instant NOON = T0.plus(MarsClock.SOL.dividedBy(2));
+    private static final Instant SUNSET = T0.plus(MarsClock.SOL.multipliedBy(3).dividedBy(4));
 
     @Autowired
     Weather weather;
@@ -92,7 +97,54 @@ class RandomEventsIT {
     }
 
     @Test
+    void chargingAtNoonGainsTheFullRate() {
+        clock.set(NOON);
+        long id = receive(new RoverCommand.Charge(4));
+
+        tick(Duration.ZERO);
+        for (int minute = 0; minute < 4; minute++) {
+            tick(Duration.ofSeconds(1)); // test charge-minute is 1 s
+        }
+
+        assertThat(status(id)).isEqualTo("COMPLETED");
+        assertThat(battery()).isCloseTo(54.0, within(0.01));
+        assertThat(events()).isEmpty();
+    }
+
+    @Test
+    void chargingAtNightGainsNothingAndSaysSoOnce() {
+        clock.set(T0); // midnight on the Mars clock
+        long id = receive(new RoverCommand.Charge(3));
+
+        tick(Duration.ZERO);
+        for (int minute = 0; minute < 3; minute++) {
+            tick(Duration.ofSeconds(1));
+        }
+
+        assertThat(status(id)).as("still runs: night is no reason to refuse").isEqualTo("COMPLETED");
+        assertThat(battery()).isEqualTo(50.0);
+        assertThat(events()).containsExactly("NO_SUNLIGHT WARNING");
+        assertThat(jdbc.sql("SELECT packet->'payload'->>'message' FROM downlink_packets WHERE type = 'EVENT'")
+                .query(String.class).single()).contains("until sunrise in about 179 s"); // first dark minute is 1 s after midnight
+    }
+
+    @Test
+    void chargingIntoTheSunsetWarnsAsTheDarkBegins() {
+        clock.set(SUNSET.minusMillis(1500));
+        receive(new RoverCommand.Charge(3));
+
+        tick(Duration.ZERO);
+        tick(Duration.ofSeconds(1)); // the sun is just above the horizon
+        assertThat(events()).isEmpty();
+        tick(Duration.ofSeconds(1)); // dark
+        tick(Duration.ofSeconds(1)); // still dark: no second warning
+
+        assertThat(events()).containsExactly("NO_SUNLIGHT WARNING");
+    }
+
+    @Test
     void chargingDuringADustStormGainsAQuarter() {
+        clock.set(NOON);
         jdbc.sql("UPDATE rover_state SET dust_storm_until = ? WHERE rover_id = 1")
                 .param(java.sql.Timestamp.from(T0.plus(Duration.ofHours(1)))).update();
         long id = receive(new RoverCommand.Charge(4));
@@ -103,7 +155,7 @@ class RandomEventsIT {
         }
 
         assertThat(status(id)).isEqualTo("COMPLETED");
-        assertThat(battery()).isEqualTo(51.0); // 4 × 0.25 instead of 4 × 1
+        assertThat(battery()).isCloseTo(51.0, within(0.01)); // 4 × 0.25 instead of 4 × 1, at noon
     }
 
     @Test

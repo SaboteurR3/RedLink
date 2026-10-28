@@ -2,6 +2,7 @@ package ge.tsu.redlink.roversim.flight;
 
 import ge.tsu.redlink.contract.command.CommandType;
 import ge.tsu.redlink.contract.command.RoverCommand;
+import ge.tsu.redlink.contract.rover.MarsClock;
 import ge.tsu.redlink.contract.rover.RoverMode;
 import ge.tsu.redlink.contract.telemetry.CommandExecutionStatus;
 import ge.tsu.redlink.contract.telemetry.EventSeverity;
@@ -26,6 +27,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -112,7 +114,15 @@ public class CommandStepper {
         // Random events are decided here, so FlightRules stays pure.
         boolean wheelStuck = command.type() == CommandType.MOVE && events.enabled()
                 && dice.chance(events.wheelStuckChancePerMeter());
-        FlightRules.Conditions conditions = new FlightRules.Conditions(rover.inDustStorm(now), wheelStuck);
+        double sunlight = MarsClock.sunlight(now);
+        FlightRules.Conditions conditions = new FlightRules.Conditions(rover.inDustStorm(now), wheelStuck, sunlight);
+        if (command.type() == CommandType.CHARGE && sunlight == 0 && (current.getStepsDone() == 0
+                || MarsClock.sunlight(now.minus(properties.chargeMinute())) > 0)) {
+            // Once as the dark begins for this charge, not on every dark minute.
+            telemetry.emit(rover.getRoverId(), new TelemetryPayload.Event("NO_SUNLIGHT", EventSeverity.WARNING,
+                    String.format(Locale.ROOT, "Night at the site: the solar panels give no power until sunrise in about %d s",
+                            MarsClock.untilSunrise(now).toSeconds())));
+        }
         StepOutcome outcome = FlightRules.step(command, rover.snapshot(), terrains.get(rover.getSiteId()), conditions);
 
         if (outcome instanceof StepOutcome.Failed failed) {

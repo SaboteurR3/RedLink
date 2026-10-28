@@ -91,7 +91,7 @@ compile error in every `switch` that forgets it, on both sides of the link.
 | `ROTATE` | `heading` NORTH/EAST/SOUTH/WEST | 2 s | — |
 | `TAKE_PHOTO` | `camera` NAVCAM/MASTCAM | 3 s | storage full |
 | `DRILL_SAMPLE` | — | 15 s | battery < 30 %; **needs approval**; cores the rock ahead if there is one, else the soil (ticket 37) |
-| `CHARGE` | `minutes` (1–120) | scaled | — (a dust storm cuts the gain to ¼) |
+| `CHARGE` | `minutes` (1–120) | scaled | — (gain × sunlight: 0 at night; a dust storm cuts it to ¼; ticket 38) |
 | `REBOOT` | — | 5 s | — (only command accepted in SAFE_MODE) |
 
 The type travels **inside** the command object, so a packet can never say `MOVE` with `ROTATE`
@@ -256,7 +256,7 @@ PENDING_APPROVAL ──approve──► QUEUED ──dispatcher──► TRANSMI
   (`CommandStepper`) either starts the next command or performs the current command's next step
   when it is due. Rules are pure (`FlightRules`): MOVE one cell per second (−1 % ground, −2 %
   sand), ROTATE 90° per 2 s the shortest way, TAKE_PHOTO 3 s, DRILL_SAMPLE 15 s (needs ≥ 30 %),
-  CHARGE +1 % per simulated minute, REBOOT 5 s. Max slope 30°.
+  CHARGE +1 % per simulated minute × sunlight (`MarsClock`: 12-minute sol, the sun's height, 0 from sunset to sunrise; a `NO_SUNLIGHT` WARNING event once as a charge goes dark; Earth's planner forecasts full sun, the upper bound, as it cannot know when the step runs), REBOOT 5 s. Max slope 30°.
 - **Ordering:** strictly by `sequenceNo` (`rover_state.last_sequence_no`). A missing number is
   waited for up to `reorder-timeout` (30 s), then skipped (EVENT `SEQUENCE_GAP_SKIPPED`); if it
   arrives later it is REFUSED `SEQUENCE_EXPIRED`.
@@ -291,14 +291,16 @@ PENDING_APPROVAL ──approve──► QUEUED ──dispatcher──► TRANSMI
 - `TerrainLoader` (classpath or folder, validated; site ids are restricted to `[a-z0-9-]` so
   they cannot escape the sites folder), immutable `Terrain` (`elevationAt`, `surfaceAt`,
   `isBlocked`, `slopeDegrees`), `TerrainWriter`, `TerrainGenerator`.
-- Default site `jezero-sim`: 64 × 64 m, 0–4 m elevation, start (32, 32), seed 2021. Generated
-  with value noise, 3–5 craters with raised rims (steep walls are the hazards), sand patches and
+- Default site `jezero-sim`: 128 × 128 m (ticket 39; was 64 × 64), 0–5 m elevation, start (64, 64), seed 2021. Generated
+  with value noise, craters with raised rims (3–5 per 64 × 64 m: noise frequency, craters and sand scale with the size, so the detail per meter stays the same) (steep walls are the hazards), sand patches and
   rocks (denser on crater rims, placed by hashing (seed, x, y)), plus a flat, rock-free landing zone.
   A test fails if the committed files and the generator drift apart.
-- Second site `gale-sim` (ticket 32): 64 × 64 m, 0–5 m, start (20, 40), seed 2012, for rover 2
+- Second site `gale-sim` (ticket 32): 128 × 128 m, 0–6 m, start (40, 80), seed 2012, for rover 2
   (`Curiosity-sim`). Each rover lives on its own site; rovers are seeded on both sides with the
   same id (mission-control V13, rover-sim V5). Regenerate with
-  `TerrainGenerator <site id> <output folder>`.
+  `TerrainGenerator <site id> <output folder>`. When the sites grew (ticket 39), mission-control V17
+  and rover-sim V7 put both rovers on the new start cells; older telemetry, photos and samples keep
+  their old-map coordinates.
 - Later the site can be replaced with real NASA elevation data (e.g. a HiRISE DTM of Jezero crater
   converted to the same files); nothing else changes.
 - rover-sim uses it for collision and slope checks; mission-control serves it to the frontend
@@ -356,7 +358,7 @@ A step that ends FAILED, REFUSED_BY_ROVER, REJECTED or CANCELLED withdraws the l
 ### Specs
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/specs` | VIEWER; the rover's spec sheet (`RoverSpecs`: costs, limits, step durations) so clients estimate with the rover's own numbers; `max-age=3600, private`, ETag, 304 |
+| GET | `/specs` | VIEWER; the rover's spec sheet (`RoverSpecs`: costs, limits, step durations; `solSeconds` from `MarsClock`) so clients estimate with the rover's own numbers; `max-age=3600, private`, ETag, 304 |
 
 ### Photos
 | Method | Path | Notes |

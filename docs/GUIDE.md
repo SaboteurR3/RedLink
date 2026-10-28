@@ -60,11 +60,11 @@ The rover understands exactly six orders. Anything else is refused.
 | **ROTATE** | turns to face North, East, South or West | one of the four | 2 s per quarter turn | 0.2 % per quarter turn |
 | **TAKE_PHOTO** | takes a picture with a camera | NAVCAM (wide, black and white) or MASTCAM (narrow, colour) | 3 s | 0.5 % battery, 2 % storage |
 | **DRILL_SAMPLE** | drills a sample: the rock in front of the rover if there is one, otherwise the soil | — | 15 s | 8 % battery, 5 % storage; needs at least 30 % battery; **needs approval** |
-| **CHARGE** | charges from the solar panels | 1–120 minutes | 1 s per minute in the demo | +1 % battery per minute (only +0.25 % in a dust storm) |
+| **CHARGE** | charges from the solar panels | 1–120 minutes | 1 s per minute in the demo | up to +1 % battery per minute in full sun: less in the morning and evening, **nothing at night**, a quarter in a dust storm |
 | **REBOOT** | restarts the rover's computer | — | 5 s | leaves safe mode |
 
-The map is the Jezero crater (simulated): 64 × 64 meters, with ground, sand and rocks, and hills
-up to 4 meters. Rocks and the map edge cannot be driven through, and slopes steeper than 30° are
+The map is the Jezero crater (simulated): 128 × 128 meters, with ground, sand, rocks, about fifteen craters, and hills
+up to 5 meters (Curiosity-sim's Gale crater is the same size, up to 6 m). Rocks and the map edge cannot be driven through, and slopes steeper than 30° are
 too steep.
 
 ## 5. The life of an order
@@ -183,7 +183,7 @@ These are the rules RedLink enforces. Each one has a reason.
   - then it fades into the site.
   Skip it with the button or Esc. It is not shown when the system asks for reduced motion.
 - **The map (3D):**
-  - the 64 × 64 m site with its rocks and pebbles, in fine detail up close;
+  - the 128 × 128 m site the rover can drive on with its rocks and pebbles, in fine detail up close;
   - around it, scenery out to about 700 m: hills, impact craters, the crater rim as a mountain wall
     on the horizon and a layered peak to the south-east. It is decoration only: the rover can
     drive only on the site. Zoom out (up to 160 m) or drag the view low to see the horizon;
@@ -199,7 +199,7 @@ These are the rules RedLink enforces. Each one has a reason.
   - drifting dust; in a dust storm, more and faster dust, a darker brown sky and a dust wall around
     the crater;
   - a Mars day (a "sol", compressed to 12 minutes, the clock is in the corner): the sun moves, the
-    sunset is blue, from dusk the stars come out (coloured, the brightest glowing and twinkling), Phobos and Deimos cross the sky and the rover's headlights go on;
+    sunset is blue, from dusk the stars come out (coloured, the brightest glowing and twinkling), Phobos and Deimos cross the sky and the rover's headlights go on. This is the rover's real clock: its solar panels charge only while the sun is up (the console warns when you choose CHARGE at night);
   - wheel tracks along where the rover reported being;
   - the rover's wheels turn while it drives, its mast turns and flashes for a photo, and the drill
     lowers for a sample;

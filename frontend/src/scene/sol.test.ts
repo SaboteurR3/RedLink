@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { daylight, dusk, mixColor, SOL_MS, solClock, solPhase, sunDirection } from './sol';
+import { daylight, dusk, mixColor, SOL_MS, solClock, solPhase, sunDirection, sunlight, untilSunriseMs } from './sol';
 
 describe('sol cycle', () => {
   it('phase wraps with the wall clock', () => {
@@ -27,6 +27,17 @@ describe('sol cycle', () => {
     expect(daylight(0.75)).toBeLessThan(1);
     expect(dusk(0.75)).toBeCloseTo(1);
     expect(dusk(0.5)).toBe(0);
+  });
+
+  it('solar power follows the sun like the rover computes it', () => {
+    expect(sunlight(0.5)).toBeCloseTo(1);
+    expect(sunlight(0.25 + 1 / 12)).toBeCloseTo(0.5); // 30° above the horizon
+    expect(sunlight(0.25)).toBeCloseTo(0);
+    expect(sunlight(0.9)).toBe(0);
+    expect(sunlight(0)).toBe(0);
+    expect(untilSunriseMs(0)).toBe(SOL_MS / 4);
+    expect(untilSunriseMs(0.75)).toBe(SOL_MS / 2);
+    expect(untilSunriseMs(0.5)).toBe(0);
   });
 
   it('reads like a clock', () => {

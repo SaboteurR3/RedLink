@@ -694,6 +694,9 @@ select {
   color: var(--muted);
   font-size: 0.85rem;
 }
+.preview-line.warn {
+  color: var(--warn);
+}
 .preview-line {
   font-size: 0.85rem;
   margin: 4px 0;

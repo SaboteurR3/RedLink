@@ -848,25 +848,25 @@ export interface components {
             float?: boolean;
             number?: boolean;
             floatingPointNumber?: boolean;
-            /** @enum {string} */
-            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
             valueNode?: boolean;
             container?: boolean;
             missingNode?: boolean;
             object?: boolean;
-            integralNumber?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
             string?: boolean;
-            short?: boolean;
-            pojo?: boolean;
+            integralNumber?: boolean;
             int?: boolean;
-            bigDecimal?: boolean;
-            binary?: boolean;
             long?: boolean;
-            bigInteger?: boolean;
-            double?: boolean;
             /** @deprecated */
             textual?: boolean;
+            pojo?: boolean;
+            bigDecimal?: boolean;
+            double?: boolean;
+            binary?: boolean;
             boolean?: boolean;
+            bigInteger?: boolean;
+            short?: boolean;
             embeddedValue?: boolean;
         };
         LastKnownState: {
@@ -973,6 +973,8 @@ export interface components {
             drillSeconds?: number;
             /** Format: double */
             rebootSeconds?: number;
+            /** Format: double */
+            solSeconds?: number;
         };
         Cell: {
             /** Format: int32 */

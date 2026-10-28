@@ -17,6 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TerrainLoaderTest {
 
     private static final Terrain GENERATED = TerrainGenerator.generate(JEZERO_SIM, JEZERO_SIM_SEED);
+    /** The shipped site is square; images written by these tests must match it to fail for their own reason. */
+    private static final int SIZE = GENERATED.width();
 
     @TempDir
     Path dir;
@@ -52,17 +54,17 @@ class TerrainLoaderTest {
     @Test
     void imageSizeMustMatchTheGrid() throws IOException {
         TerrainWriter.write(GENERATED, dir);
-        writeGray(dir.resolve("surface.png"), 32, 64, 0);
+        writeGray(dir.resolve("surface.png"), 32, SIZE, 0);
 
         assertThatThrownBy(() -> TerrainLoader.fromDirectory(dir))
                 .isInstanceOf(InvalidTerrainException.class)
-                .hasMessageContaining("surface.png is 32x64");
+                .hasMessageContaining("surface.png is 32x" + SIZE);
     }
 
     @Test
     void unknownSurfaceValueIsRejected() throws IOException {
         TerrainWriter.write(GENERATED, dir);
-        writeGray(dir.resolve("surface.png"), 64, 64, 77);
+        writeGray(dir.resolve("surface.png"), SIZE, SIZE, 77);
 
         assertThatThrownBy(() -> TerrainLoader.fromDirectory(dir))
                 .isInstanceOf(InvalidTerrainException.class)
@@ -72,7 +74,7 @@ class TerrainLoaderTest {
     @Test
     void blockedStartCellIsRejected() throws IOException {
         TerrainWriter.write(GENERATED, dir);
-        writeGray(dir.resolve("surface.png"), 64, 64, SurfaceType.ROCK.pixel());
+        writeGray(dir.resolve("surface.png"), SIZE, SIZE, SurfaceType.ROCK.pixel());
 
         assertThatThrownBy(() -> TerrainLoader.fromDirectory(dir))
                 .isInstanceOf(InvalidTerrainException.class)
@@ -82,7 +84,7 @@ class TerrainLoaderTest {
     @Test
     void colourImageIsRejected() throws IOException {
         TerrainWriter.write(GENERATED, dir);
-        ImageIO.write(new BufferedImage(64, 64, BufferedImage.TYPE_INT_RGB), "png", dir.resolve("heightmap.png").toFile());
+        ImageIO.write(new BufferedImage(SIZE, SIZE, BufferedImage.TYPE_INT_RGB), "png", dir.resolve("heightmap.png").toFile());
 
         assertThatThrownBy(() -> TerrainLoader.fromDirectory(dir))
                 .isInstanceOf(InvalidTerrainException.class)

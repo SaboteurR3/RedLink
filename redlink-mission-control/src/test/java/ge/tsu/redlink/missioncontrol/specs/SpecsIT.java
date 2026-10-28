@@ -39,6 +39,7 @@ class SpecsIT {
                 .andExpect(jsonPath("$.drillMinBattery").value(RoverSpecs.DRILL_MIN_BATTERY))
                 .andExpect(jsonPath("$.rotateSecondsPerQuarterTurn").value(2.0))
                 .andExpect(jsonPath("$.drillSeconds").value(15.0))
+                .andExpect(jsonPath("$.solSeconds").value(720.0))
                 .andReturn().getResponse().getHeader(HttpHeaders.ETAG);
 
         mvc.perform(get("/api/v1/specs").header(HttpHeaders.AUTHORIZATION, viewer).header(HttpHeaders.IF_NONE_MATCH, etag))

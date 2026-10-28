@@ -19,6 +19,7 @@ const specs: Specs = {
   photoSeconds: 3,
   drillSeconds: 15,
   rebootSeconds: 5,
+  solSeconds: 720,
 };
 const rover: LastKnownState = {
   x: 10,

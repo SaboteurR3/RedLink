@@ -75,8 +75,9 @@ public final class FlightRules {
                     ? new StepOutcome.Failed(FailureCode.LOW_BATTERY, String.format(Locale.ROOT,
                     "Drilling needs %.0f%% battery, rover has %.2f%%", DRILL_MIN_BATTERY, rover.batteryPercent()), rover)
                     : store(rover, DRILL_STORAGE, DRILL_COST);
-            case CHARGE -> new StepOutcome.Advanced(rover.charged(conditions.dustStorm()
-                    ? CHARGE_PER_MINUTE * RoverSpecs.DUST_STORM_CHARGE_FACTOR : CHARGE_PER_MINUTE));
+            // Solar power: none at night, a share of the full rate by the sun's height, a quarter in a storm.
+            case CHARGE -> new StepOutcome.Advanced(rover.charged(CHARGE_PER_MINUTE * conditions.sunlight()
+                    * (conditions.dustStorm() ? RoverSpecs.DUST_STORM_CHARGE_FACTOR : 1)));
             case REBOOT -> new StepOutcome.Advanced(rover.inMode(RoverMode.NOMINAL));
         };
     }
@@ -165,12 +166,14 @@ public final class FlightRules {
     /**
      * What the environment does to a step.
      *
-     * @param dustStorm  solar charging is reduced
+     * @param dustStorm  solar charging is reduced to {@link RoverSpecs#DUST_STORM_CHARGE_FACTOR}
      * @param wheelStuck this meter of a drive fails
+     * @param sunlight   what the solar panels get, 0 (night) to 1 (noon), from {@link ge.tsu.redlink.contract.rover.MarsClock}
      */
-    public record Conditions(boolean dustStorm, boolean wheelStuck) {
+    public record Conditions(boolean dustStorm, boolean wheelStuck, double sunlight) {
 
-        public static final Conditions NOMINAL = new Conditions(false, false);
+        /** Clear sky at noon, nothing going wrong. */
+        public static final Conditions NOMINAL = new Conditions(false, false, 1.0);
     }
 
     /**

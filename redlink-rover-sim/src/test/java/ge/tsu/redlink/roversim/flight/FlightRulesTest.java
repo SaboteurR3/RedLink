@@ -199,16 +199,32 @@ class FlightRulesTest {
     @Test
     void dustStormCutsChargingToAQuarter() {
         StepOutcome outcome = FlightRules.step(new RoverCommand.Charge(5), rover(2, 1, Heading.NORTH, 50, 0), TERRAIN,
-                new FlightRules.Conditions(true, false));
+                new FlightRules.Conditions(true, false, 1.0));
 
         assertThat(outcome.rover().batteryPercent()).isEqualTo(50.25);
+    }
+
+    @ParameterizedTest(name = "sunlight {0}, storm {1}: +{2} %")
+    @CsvSource({
+            "1.0, false, 1.0", // noon
+            "0.5, false, 0.5", // morning or evening
+            "0.0, false, 0.0", // night: the panels give nothing
+            "0.5, true, 0.13", // low sun and a storm: 0.125, kept to two decimals like every battery value
+            "0.0, true, 0.0",
+    })
+    void chargingFollowsTheSunAndTheWeather(double sunlight, boolean storm, double gained) {
+        StepOutcome outcome = FlightRules.step(new RoverCommand.Charge(5), rover(2, 1, Heading.NORTH, 50, 0), TERRAIN,
+                new FlightRules.Conditions(storm, false, sunlight));
+
+        assertThat(outcome).isInstanceOf(StepOutcome.Advanced.class);
+        assertThat(outcome.rover().batteryPercent()).isEqualTo(50 + gained);
     }
 
     @Test
     void stuckWheelStopsTheDriveWithoutSafeMode() {
         RoverSnapshot before = rover(2, 1, Heading.EAST, 50, 0);
 
-        StepOutcome outcome = FlightRules.step(new RoverCommand.Move(1), before, TERRAIN, new FlightRules.Conditions(false, true));
+        StepOutcome outcome = FlightRules.step(new RoverCommand.Move(1), before, TERRAIN, new FlightRules.Conditions(false, true, 1.0));
 
         assertThat(outcome).isInstanceOfSatisfying(StepOutcome.Failed.class, failed -> {
             assertThat(failed.code()).isEqualTo(FailureCode.WHEEL_STUCK);

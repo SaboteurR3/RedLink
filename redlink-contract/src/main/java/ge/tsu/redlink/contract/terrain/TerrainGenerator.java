@@ -21,12 +21,12 @@ public final class TerrainGenerator {
 
     /** The default site shipped in {@code sites/jezero-sim}. */
     public static final SiteInfo JEZERO_SIM = new SiteInfo(
-            "jezero-sim", "Jezero Crater (simulated)", 64, 64, 1.0, 0.0, 4.0, 32, 32);
+            "jezero-sim", "Jezero Crater (simulated)", 128, 128, 1.0, 0.0, 5.0, 64, 64);
     /** 2021: the year Perseverance landed in Jezero crater. */
     public static final long JEZERO_SIM_SEED = 2021L;
     /** The second site (ticket 32), for the second rover. */
     public static final SiteInfo GALE_SIM = new SiteInfo(
-            "gale-sim", "Gale Crater (simulated)", 64, 64, 1.0, 0.0, 5.0, 20, 40);
+            "gale-sim", "Gale Crater (simulated)", 128, 128, 1.0, 0.0, 6.0, 40, 80);
     /** 2012: the year Curiosity landed in Gale crater. */
     public static final long GALE_SIM_SEED = 2012L;
     /** Every shipped site and its seed. */
@@ -39,6 +39,11 @@ public final class TerrainGenerator {
     private static final double SAND_THRESHOLD = 0.68;
     private static final double ROCK_PROBABILITY = 0.02;
     private static final double RIM_ROCK_PROBABILITY = 0.10;
+    /**
+     * The site size the feature sizes were tuned for. Bigger sites get proportionally more hills,
+     * craters and sand patches, so the ground has the same detail per meter at any size.
+     */
+    private static final double REFERENCE_SIZE = 64;
 
     /**
      * Regenerates a shipped site. Usage: {@code TerrainGenerator <site id> <output folder>}, e.g.
@@ -62,7 +67,8 @@ public final class TerrainGenerator {
         int height = site.height();
 
         double[] elevation = new double[width * height];
-        ValueNoise ground = new ValueNoise(random, BASE_FREQUENCY, OCTAVES);
+        double scale = featureScale(site);
+        ValueNoise ground = new ValueNoise(random, BASE_FREQUENCY * scale, OCTAVES);
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 elevation[y * width + x] = ground.sample((double) x / width, (double) y / height);
@@ -76,7 +82,7 @@ public final class TerrainGenerator {
         flattenLandingZone(site, elevation);
         int[] levels = toLevels(elevation);
 
-        ValueNoise sand = new ValueNoise(random, 2, 2);
+        ValueNoise sand = new ValueNoise(random, 2 * scale, 2);
         SurfaceType[] surface = new SurfaceType[width * height];
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
@@ -87,9 +93,10 @@ public final class TerrainGenerator {
     }
 
     private static List<Crater> placeCraters(SiteInfo site, Random random) {
-        int wanted = 3 + random.nextInt(3);
+        double area = featureScale(site) * featureScale(site);
+        int wanted = (int) Math.round((3 + random.nextInt(3)) * area);
         List<Crater> craters = new ArrayList<>();
-        for (int attempt = 0; attempt < 100 && craters.size() < wanted; attempt++) {
+        for (int attempt = 0; attempt < 100 * area && craters.size() < wanted; attempt++) {
             Crater crater = new Crater(
                     random.nextDouble() * site.width(),
                     random.nextDouble() * site.height(),
@@ -168,6 +175,10 @@ public final class TerrainGenerator {
         h = (h ^ (h >>> 27)) * 0x94D049BB133111EBL;
         h ^= h >>> 31;
         return (h >>> 11) * 0x1.0p-53;
+    }
+
+    private static double featureScale(SiteInfo site) {
+        return Math.max(site.width(), site.height()) / REFERENCE_SIZE;
     }
 
     private static double distanceToStart(SiteInfo site, int x, int y) {

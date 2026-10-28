@@ -25,6 +25,20 @@ export function daylight(phase: number): number {
   return smoothstep(-0.12, 0.25, height);
 }
 
+/**
+ * What the rover's solar panels get, as a share of full power: the sun's height, 1 at noon, 0 from
+ * sunset to sunrise. The same formula as `MarsClock.sunlight` on the rover, so the hint matches.
+ */
+export function sunlight(phase: number): number {
+  return Math.max(0, Math.sin((phase - 0.25) * 2 * Math.PI));
+}
+
+/** Milliseconds until the sun rises; 0 while it is up. */
+export function untilSunriseMs(phase: number, solMs = SOL_MS): number {
+  if (phase >= 0.25 && phase < 0.75) return 0;
+  return Math.round((phase < 0.25 ? 0.25 - phase : 1.25 - phase) * solMs);
+}
+
 /** How much dusk blue to mix in: strongest with the sun just above or below the horizon. */
 export function dusk(phase: number): number {
   const height = sunDirection(phase)[1];

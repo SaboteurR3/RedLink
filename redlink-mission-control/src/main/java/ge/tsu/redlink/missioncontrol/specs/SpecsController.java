@@ -1,5 +1,6 @@
 package ge.tsu.redlink.missioncontrol.specs;
 
+import ge.tsu.redlink.contract.rover.MarsClock;
 import ge.tsu.redlink.contract.rover.RoverSpecs;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -39,6 +40,8 @@ public class SpecsController {
      * @param moveCostPerMeterSand   battery percent per meter in sand
      * @param rotateCost             battery percent per quarter turn
      * @param dustStormChargeFactor  fraction of the normal charge rate during a dust storm
+     * @param solSeconds             length of a Mars day at the site (compressed for the demo); charging
+     *                               gets the sun's height as a share of the full rate, none at night
      */
     public record SpecsResponse(
             double maxSlopeDegrees,
@@ -56,14 +59,16 @@ public class SpecsController {
             double rotateSecondsPerQuarterTurn,
             double photoSeconds,
             double drillSeconds,
-            double rebootSeconds) {
+            double rebootSeconds,
+            double solSeconds) {
 
         static SpecsResponse current() {
             return new SpecsResponse(RoverSpecs.MAX_SLOPE_DEGREES, RoverSpecs.MOVE_COST_GROUND, RoverSpecs.MOVE_COST_SAND,
                     RoverSpecs.ROTATE_COST, RoverSpecs.PHOTO_COST, RoverSpecs.PHOTO_STORAGE, RoverSpecs.DRILL_COST,
                     RoverSpecs.DRILL_MIN_BATTERY, RoverSpecs.DRILL_STORAGE, RoverSpecs.CHARGE_PER_MINUTE,
                     RoverSpecs.DUST_STORM_CHARGE_FACTOR, seconds(RoverSpecs.MOVE_STEP), seconds(RoverSpecs.ROTATE_STEP),
-                    seconds(RoverSpecs.PHOTO_TIME), seconds(RoverSpecs.DRILL_TIME), seconds(RoverSpecs.REBOOT_TIME));
+                    seconds(RoverSpecs.PHOTO_TIME), seconds(RoverSpecs.DRILL_TIME), seconds(RoverSpecs.REBOOT_TIME),
+                    seconds(MarsClock.SOL));
         }
 
         private static double seconds(Duration duration) {

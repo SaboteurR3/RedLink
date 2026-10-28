@@ -72,6 +72,8 @@ public final class MissionPlanner {
                     ? Outcome.fail(String.format(Locale.ROOT, "drilling needs %.0f%% battery, the rover would have %.2f%%",
                     RoverSpecs.DRILL_MIN_BATTERY, rover.battery()))
                     : store(rover, RoverSpecs.DRILL_STORAGE, RoverSpecs.DRILL_COST);
+            // Full sun: Earth cannot know when on Mars the step will run, so this is the upper bound
+            // (at night the rover gains nothing; see MarsClock).
             case CHARGE -> Outcome.ok(rover.withBattery(Math.min(100,
                     rover.battery() + ((RoverCommand.Charge) step).minutes() * RoverSpecs.CHARGE_PER_MINUTE)));
             case REBOOT -> Outcome.ok(rover.withMode(RoverMode.NOMINAL));

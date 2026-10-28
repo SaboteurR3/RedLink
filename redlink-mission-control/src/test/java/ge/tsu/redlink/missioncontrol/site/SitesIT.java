@@ -47,10 +47,10 @@ class SitesIT {
     void siteMetadataDescribesTheGrid() throws Exception {
         mvc.perform(get("/api/v1/sites/jezero-sim").header(HttpHeaders.AUTHORIZATION, viewer))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.width").value(64))
-                .andExpect(jsonPath("$.height").value(64))
-                .andExpect(jsonPath("$.maxElevationMeters").value(4.0))
-                .andExpect(jsonPath("$.start.x").value(32));
+                .andExpect(jsonPath("$.width").value(128))
+                .andExpect(jsonPath("$.height").value(128))
+                .andExpect(jsonPath("$.maxElevationMeters").value(5.0))
+                .andExpect(jsonPath("$.start.x").value(64));
     }
 
     @Test
@@ -58,8 +58,8 @@ class SitesIT {
         mvc.perform(get("/api/v1/sites/gale-sim").header(HttpHeaders.AUTHORIZATION, viewer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Gale Crater (simulated)"))
-                .andExpect(jsonPath("$.start.x").value(20))
-                .andExpect(jsonPath("$.start.y").value(40));
+                .andExpect(jsonPath("$.start.x").value(40))
+                .andExpect(jsonPath("$.start.y").value(80));
     }
 
     @Test
@@ -72,7 +72,7 @@ class SitesIT {
                 .andReturn().getResponse().getContentAsByteArray();
 
         BufferedImage image = ImageIO.read(new ByteArrayInputStream(png));
-        assertThat(image.getWidth()).isEqualTo(64);
+        assertThat(image.getWidth()).isEqualTo(128);
         assertThat(image.getType()).isEqualTo(BufferedImage.TYPE_BYTE_GRAY);
     }
 

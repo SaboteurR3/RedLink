@@ -148,10 +148,18 @@ export function Rover({
     placed.current = true;
   }, [grid, target, groupRef]);
 
-  // Headlights point ahead of the rover.
+  // Headlights point ahead of the rover: their targets ride on the rover, so they turn and drive
+  // with it (a target left outside the scene graph would stay at one point in the world).
   useLayoutEffect(() => {
-    for (const light of lights.current) light.target.position.set(light.position.x, 0, -6);
-  }, []);
+    const g = groupRef.current;
+    for (const light of lights.current) {
+      light.target.position.set(light.position.x, 0, -6);
+      g?.add(light.target);
+    }
+    return () => {
+      for (const light of lights.current) light.target.removeFromParent();
+    };
+  }, [groupRef]);
 
   useFrame((state, delta) => {
     const g = groupRef.current;
@@ -218,7 +226,8 @@ export function Rover({
         />
       ))}
       {[-0.3, 0.3].map((side) => (
-        <mesh key={`lamp${side}`} position={[side, 0.55, -0.58]}>
+        // Turned to face forward (−z), so the lamps are seen from in front of the rover.
+        <mesh key={`lamp${side}`} position={[side, 0.55, -0.58]} rotation-y={Math.PI}>
           <circleGeometry args={[0.05, 12]} />
           <meshBasicMaterial color="#fff3dd" toneMapped={false} />
         </mesh>

@@ -16,6 +16,7 @@ import {
 } from '../api/types';
 import { estimate, formatBattery } from '../console/estimate';
 import { describe } from './CommandTimeline';
+import { solPhase, sunlight, untilSunriseMs } from '../scene/sol';
 
 const MAX_STEPS = 50;
 
@@ -209,21 +210,25 @@ export function CommandConsole({
         <button type="submit" disabled={busy}>
           {busy ? 'Sending…' : 'Send to rover'}
         </button>
-        <button type="button" className="secondary" disabled={busy || safeMode || plan.length >= MAX_STEPS} onClick={() => setPlan([...plan, build()])}>
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy || safeMode || plan.length >= MAX_STEPS}
+          onClick={() => setPlan([...plan, build()])}
+        >
           Add to plan
         </button>
       </div>
 
       {guess && (
         <div className="estimate">
-          <span>
-            ⏱ {guess.marsSeconds === null ? `${minutes} simulated min` : `${guess.marsSeconds} s on Mars`}
-          </span>
+          <span>⏱ {guess.marsSeconds === null ? `${minutes} simulated min` : `${guess.marsSeconds} s on Mars`}</span>
           <span>🔋 {formatBattery(guess)}</span>
           {guess.storage > 0 && <span>💾 +{guess.storage} %</span>}
           {guess.seeResultSeconds !== null && <span className="muted">result on screen in about {guess.seeResultSeconds} s</span>}
         </div>
       )}
+      {type === 'CHARGE' && <SunHint />}
       {preview && (
         <p className={`preview-line ${preview.feasible ? 'ok' : 'error'}`}>
           {preview.feasible
@@ -245,14 +250,25 @@ export function CommandConsole({
             {plan.map((step, i) => (
               <li key={i}>
                 {describe(step)}{' '}
-                <button type="button" className="secondary small" aria-label={`Remove step ${i + 1}`} onClick={() => setPlan(plan.filter((_, j) => j !== i))}>
+                <button
+                  type="button"
+                  className="secondary small"
+                  aria-label={`Remove step ${i + 1}`}
+                  onClick={() => setPlan(plan.filter((_, j) => j !== i))}
+                >
                   ✕
                 </button>
               </li>
             ))}
           </ol>
           <div className="console-row">
-            <input placeholder="Mission name" maxLength={100} value={planName} onChange={(e) => setPlanName(e.target.value)} aria-label="Mission name" />
+            <input
+              placeholder="Mission name"
+              maxLength={100}
+              value={planName}
+              onChange={(e) => setPlanName(e.target.value)}
+              aria-label="Mission name"
+            />
             <button type="button" disabled={busy} onClick={() => void submitMission()}>
               Send mission ({plan.length} {plan.length === 1 ? 'step' : 'steps'})
             </button>
@@ -260,7 +276,10 @@ export function CommandConsole({
               Clear
             </button>
           </div>
-          <p className="muted">The whole plan is checked against the rover’s last known state and the terrain first; it needs a rover with no unfinished commands.</p>
+          <p className="muted">
+            The whole plan is checked against the rover’s last known state and the terrain first; it needs a rover with no
+            unfinished commands.
+          </p>
         </div>
       )}
       {result && <p className={result.ok ? 'ok' : 'error'}>{result.text}</p>}
@@ -284,5 +303,27 @@ export function CommandConsole({
         </div>
       )}
     </form>
+  );
+}
+
+/**
+ * The rover charges from the sun: at night a CHARGE gains nothing, in a low sun only part of the
+ * rate. Uses the real Mars clock (the rover's), not a `?sol=` pinned for screenshots.
+ */
+function SunHint() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+  const phase = solPhase(now);
+  const sun = sunlight(phase);
+  if (sun >= 0.5) return null;
+  return (
+    <p className="preview-line warn">
+      {sun === 0
+        ? `☾ Night at the site: charging gains nothing until sunrise in about ${Math.ceil(untilSunriseMs(phase) / 1000)} s`
+        : `🌅 Low sun: charging gains about ${Math.round(sun * 100)} % of the full rate`}
+    </p>
   );
 }

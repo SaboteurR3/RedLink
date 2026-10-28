@@ -1,5 +1,7 @@
 # RedLink
 
+[![CI](https://github.com/SaboteurR3/RedLink/actions/workflows/ci.yml/badge.svg)](https://github.com/SaboteurR3/RedLink/actions/workflows/ci.yml)
+
 An asynchronous REST platform for commanding a simulated Mars rover over a delayed deep-space link.
 
 Operators on Earth send commands through a REST API. Each command travels over a simulated link

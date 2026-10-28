@@ -2,6 +2,7 @@ package ge.tsu.redlink.missioncontrol.command;
 
 import ge.tsu.redlink.contract.command.RoverCommand;
 import ge.tsu.redlink.missioncontrol.idempotency.IdempotencyService;
+import ge.tsu.redlink.missioncontrol.ratelimit.SubmissionRateLimiter;
 import ge.tsu.redlink.missioncontrol.idempotency.IdempotencyService.Outcome;
 import ge.tsu.redlink.missioncontrol.web.Tagged;
 import io.swagger.v3.oas.annotations.Operation;
@@ -51,6 +52,7 @@ public class CommandController {
 
     private final CommandService commands;
     private final CommandProperties properties;
+    private final SubmissionRateLimiter rateLimiter;
 
     /**
      * {@code 202 Accepted}: the command is queued, not done; the rover will only receive it after
@@ -73,6 +75,7 @@ public class CommandController {
                                   @Valid @RequestBody RoverCommand command,
                                   @AuthenticationPrincipal Jwt jwt) {
         IdempotencyService.validateKey(idempotencyKey);
+        rateLimiter.acquire(jwt.getSubject());
         Outcome outcome = commands.submit(roverId, command, jwt.getSubject(), idempotencyKey);
 
         ResponseEntity.BodyBuilder response = ResponseEntity.status(outcome.response().status())

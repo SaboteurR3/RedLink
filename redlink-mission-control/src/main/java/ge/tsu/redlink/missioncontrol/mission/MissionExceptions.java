@@ -1,6 +1,7 @@
 package ge.tsu.redlink.missioncontrol.mission;
 
 import ge.tsu.redlink.contract.command.CommandType;
+import ge.tsu.redlink.missioncontrol.command.CommandStatus;
 import ge.tsu.redlink.missioncontrol.web.ApiExceptions.ConflictException;
 import ge.tsu.redlink.missioncontrol.web.ApiExceptions.NotFoundException;
 import ge.tsu.redlink.missioncontrol.web.ApiExceptions.UnprocessableException;
@@ -43,10 +44,31 @@ final class MissionExceptions {
     /** 409: the plan must start from a known state, so the rover's queue has to be empty. */
     static class RoverBusyException extends ConflictException {
 
-        RoverBusyException(long roverId) {
+        private final List<BlockingCommand> blocking;
+
+        RoverBusyException(long roverId, List<BlockingCommand> blocking) {
             super(ProblemTypes.ROVER_BUSY, "Rover busy",
                     "Rover " + roverId + " still has unfinished commands; a mission is planned from a known state, "
                             + "so wait until they finish (or cancel them)");
+            this.blocking = List.copyOf(blocking);
+        }
+
+        /** Which commands block, so a client can offer to cancel those still on Earth. */
+        @Override
+        public Map<String, Object> properties() {
+            return Map.of("blockingCommands", blocking);
+        }
+    }
+
+    /** @param cancellable still on Earth, so it can be withdrawn */
+    record BlockingCommand(long id, CommandType type, CommandStatus status, boolean cancellable) {
+    }
+
+    /** 422: no drivable way to that cell (rock, outside the map, or walled in). */
+    static class NoRouteException extends UnprocessableException {
+
+        NoRouteException(String detail) {
+            super(ProblemTypes.NO_ROUTE, "No route", detail);
         }
     }
 

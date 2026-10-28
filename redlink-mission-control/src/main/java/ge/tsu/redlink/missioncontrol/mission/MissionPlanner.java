@@ -1,5 +1,6 @@
 package ge.tsu.redlink.missioncontrol.mission;
 
+import ge.tsu.redlink.contract.command.CommandType;
 import ge.tsu.redlink.contract.command.RoverCommand;
 import ge.tsu.redlink.contract.rover.Heading;
 import ge.tsu.redlink.contract.rover.RoverMode;
@@ -9,6 +10,7 @@ import ge.tsu.redlink.contract.terrain.Terrain;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -26,25 +28,44 @@ public final class MissionPlanner {
      * @return {@link Result.Feasible} with the forecast, or {@link Result.Infeasible} naming the first impossible step
      */
     public static Result plan(State start, List<RoverCommand> steps, Terrain terrain) {
+        return simulate(start, steps, terrain).result();
+    }
+
+    /**
+     * The same, keeping every intermediate position (each meter of a drive, each other step) and the
+     * cell where the plan fails, for showing the path on a map.
+     */
+    public static Simulation simulate(State start, List<RoverCommand> steps, Terrain terrain) {
+        Trace trace = new Trace();
+        trace.add(-1, start);
+        Result result = run(start, steps, terrain, trace);
+        return new Simulation(result, List.copyOf(trace.path), trace.failedX, trace.failedY);
+    }
+
+    private static Result run(State start, List<RoverCommand> steps, Terrain terrain, Trace trace) {
         State state = start;
         for (int i = 0; i < steps.size(); i++) {
             RoverCommand step = steps.get(i);
+            trace.step = i;
             if (state.mode() == RoverMode.SAFE_MODE && !step.type().allowedInSafeMode()) {
                 return new Result.Infeasible(i, step, "the rover is in safe mode and only accepts REBOOT");
             }
-            Outcome outcome = apply(step, state, terrain);
+            Outcome outcome = apply(step, state, terrain, trace);
             if (outcome.problem() != null) {
                 return new Result.Infeasible(i, step, outcome.problem());
             }
             state = outcome.state();
+            if (step.type() != CommandType.MOVE) {
+                trace.add(i, state); // a drive already added every meter
+            }
         }
         return new Result.Feasible(state);
     }
 
-    private static Outcome apply(RoverCommand step, State rover, Terrain terrain) {
+    private static Outcome apply(RoverCommand step, State rover, Terrain terrain, Trace trace) {
         // Java 17: switch on the type enum keeps the exhaustiveness check.
         return switch (step.type()) {
-            case MOVE -> move(rover, ((RoverCommand.Move) step).distanceMeters(), terrain);
+            case MOVE -> move(rover, ((RoverCommand.Move) step).distanceMeters(), terrain, trace);
             case ROTATE -> rotate(rover, ((RoverCommand.Rotate) step).heading());
             case TAKE_PHOTO -> store(rover, RoverSpecs.PHOTO_STORAGE, RoverSpecs.PHOTO_COST);
             case DRILL_SAMPLE -> rover.battery() < RoverSpecs.DRILL_MIN_BATTERY
@@ -57,12 +78,14 @@ public final class MissionPlanner {
         };
     }
 
-    private static Outcome move(State rover, int meters, Terrain terrain) {
+    private static Outcome move(State rover, int meters, Terrain terrain, Trace trace) {
         State state = rover;
         for (int meter = 1; meter <= meters; meter++) {
             int toX = state.x() + dx(state.heading());
             int toY = state.y() + dy(state.heading());
             String where = "(" + toX + "," + toY + ")";
+            trace.failedX = toX; // where it would fail, if it fails
+            trace.failedY = toY;
             if (!terrain.contains(toX, toY)) {
                 return Outcome.fail("meter " + meter + " would leave the map at " + where);
             }
@@ -80,7 +103,10 @@ public final class MissionPlanner {
                         meter, cost, state.battery()));
             }
             state = new State(toX, toY, state.heading(), drain(state.battery(), cost), state.storage(), state.mode());
+            trace.add(trace.step, state);
         }
+        trace.failedX = null;
+        trace.failedY = null;
         return Outcome.ok(state);
     }
 
@@ -138,6 +164,30 @@ public final class MissionPlanner {
 
         State withMode(RoverMode newMode) {
             return new State(x, y, heading, battery, storage, newMode);
+        }
+    }
+
+    /**
+     * @param path    every position the plan passes, starting with the start ({@code step} -1), then one
+     *                per meter driven and one after every other step
+     * @param failedX the cell a failing drive would have entered (null if the plan is feasible or fails elsewhere)
+     */
+    public record Simulation(Result result, List<Waypoint> path, Integer failedX, Integer failedY) {
+    }
+
+    /** @param step zero-based index of the step that led here; -1 for the start */
+    public record Waypoint(int step, State state) {
+    }
+
+    /** Collects the path while a plan is played. */
+    private static final class Trace {
+        private final List<Waypoint> path = new ArrayList<>();
+        private int step = -1;
+        private Integer failedX;
+        private Integer failedY;
+
+        void add(int stepIndex, State state) {
+            path.add(new Waypoint(stepIndex, state));
         }
     }
 

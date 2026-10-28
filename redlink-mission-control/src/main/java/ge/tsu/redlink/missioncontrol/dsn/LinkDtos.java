@@ -21,8 +21,12 @@ public final class LinkDtos {
         }
     }
 
-    /** @param uplinkOpen whether queued commands can leave Earth right now (window open, no conjunction) */
-    public record LinkStatus(long oneWayDelaySeconds, WindowStatus window, ConjunctionResponse conjunction, boolean uplinkOpen) {
+    /**
+     * @param queueHoldSeconds how long a new command waits on Earth before it is sent (the cancel window)
+     * @param uplinkOpen       whether queued commands can leave Earth right now (window open, no conjunction)
+     */
+    public record LinkStatus(long oneWayDelaySeconds, long queueHoldSeconds, WindowStatus window,
+                             ConjunctionResponse conjunction, boolean uplinkOpen) {
     }
 
     /** @param nextChangeAt when the window closes (if open) or opens (if closed); null when windows are off */

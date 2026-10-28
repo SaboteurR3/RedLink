@@ -3,7 +3,7 @@ import { ApiClient, ApiError } from './api/client';
 import type { Me } from './api/types';
 import { clearSession, loadSession, saveSession } from './auth/session';
 import { LoginPage } from './components/LoginPage';
-import { MissionControl } from './components/MissionControl';
+import { RoverSelection } from './components/RoverSelection';
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -57,5 +57,5 @@ export function App() {
 
   if (checking) return <div className="splash">Connecting to mission control…</div>;
   if (!me) return <LoginPage onLogin={login} notice={notice} />;
-  return <MissionControl api={api} me={me} onLogout={signOut} />;
+  return <RoverSelection api={api} me={me} onLogout={signOut} />;
 }

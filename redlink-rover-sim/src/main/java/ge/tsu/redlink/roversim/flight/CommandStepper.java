@@ -12,6 +12,7 @@ import ge.tsu.redlink.roversim.events.Dice;
 import ge.tsu.redlink.roversim.events.RoverEventsProperties;
 import ge.tsu.redlink.roversim.rover.RoverState;
 import ge.tsu.redlink.roversim.rover.RoverStateRepository;
+import ge.tsu.redlink.roversim.tracing.LinkTracing;
 import ge.tsu.redlink.roversim.uplink.ReceivedCommand;
 import ge.tsu.redlink.roversim.uplink.ReceivedCommandRepository;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +48,7 @@ public class CommandStepper {
     private final RoverProperties properties;
     private final RoverEventsProperties events;
     private final Dice dice;
+    private final LinkTracing tracing;
 
     @Transactional
     public void advance(long roverId) {
@@ -54,11 +56,17 @@ public class CommandStepper {
         RoverState rover = rovers.findById(roverId)
                 .orElseThrow(() -> new IllegalArgumentException("No rover " + roverId));
 
+        // Work on a command continues Earth's trace of it (from the packet); idle ticks make no spans.
         Optional<ReceivedCommand> executing = commands.findExecuting(roverId);
         if (executing.isPresent()) {
-            continueCommand(rover, executing.get(), now);
+            ReceivedCommand current = executing.get();
+            if (!now.isBefore(current.getNextStepAt())) {
+                tracing.inSpan(current.getTraceParent(), "rover step " + current.getType(),
+                        () -> continueCommand(rover, current, now));
+            }
         } else {
-            commands.findNextWaiting(roverId).ifPresent(next -> startNext(rover, next, now));
+            commands.findNextWaiting(roverId).ifPresent(next -> tracing.inSpan(next.getTraceParent(),
+                    "rover start " + next.getType(), () -> startNext(rover, next, now)));
         }
     }
 
@@ -124,6 +132,11 @@ public class CommandStepper {
         telemetry.emit(rover.getRoverId(), rover.snapshot().toTelemetry());
         if (command instanceof RoverCommand.TakePhoto takePhoto) {
             telemetry.emit(rover.getRoverId(), photo(rover, current, takePhoto));
+        }
+        if (command.type() == CommandType.DRILL_SAMPLE) {
+            telemetry.emit(rover.getRoverId(), new TelemetryPayload.Sample(current.getCommandId(),
+                    FlightRules.sampleMaterial(rover.snapshot(), terrains.get(rover.getSiteId())),
+                    rover.getX(), rover.getY(), rover.getHeading()));
         }
         // Keep the original cadence: a 5 m drive takes 5 s, however the ticks fall.
         current.stepDone(current.getNextStepAt().plus(

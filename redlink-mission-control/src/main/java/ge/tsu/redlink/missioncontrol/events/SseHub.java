@@ -34,6 +34,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class SseHub {
 
     private static final long RECONNECT_MILLIS = 3_000;
+    /**
+     * Live catch-up after a notification only covers what was just committed elsewhere; a resuming
+     * client can be much further behind, which {@code replayLimit} caps.
+     */
+    private static final int CATCH_UP_LIMIT = 1_000;
 
     private final Map<Long, Set<Subscription>> subscribers = new ConcurrentHashMap<>();
     private final AtomicInteger open = new AtomicInteger();
@@ -66,7 +71,7 @@ public class SseHub {
                 if (lastEventId == null) {
                     sendSnapshot(subscription, EventType.ROVER);
                 } else {
-                    replay(subscription, lastEventId);
+                    replay(subscription, lastEventId, properties.replayLimit());
                 }
             } catch (IOException e) {
                 unsubscribe(subscription);
@@ -89,6 +94,27 @@ public class SseHub {
         }
     }
 
+    /**
+     * Sends the rover's streams every stored event they have not seen yet, in order; events
+     * committed by another instance reach this instance's streams this way. Streams already
+     * up to date receive nothing (the same event is never sent twice).
+     */
+    void catchUp(long roverId) {
+        for (Subscription subscription : subscribers.getOrDefault(roverId, Set.of())) {
+            synchronized (subscription) {
+                try {
+                    replay(subscription, subscription.lastSentId(), CATCH_UP_LIMIT);
+                } catch (IOException | IllegalStateException e) {
+                    unsubscribe(subscription);
+                }
+            }
+        }
+    }
+
+    void catchUpAll() {
+        subscribers.keySet().forEach(this::catchUp);
+    }
+
     /** A comment line, so proxies and load balancers do not close idle streams. */
     void heartbeat() {
         subscribers.values().forEach(set -> set.forEach(subscription -> {
@@ -109,13 +135,13 @@ public class SseHub {
         return open.get();
     }
 
-    private void replay(Subscription subscription, long lastEventId) throws IOException {
+    private void replay(Subscription subscription, long lastEventId, int limit) throws IOException {
         List<StoredEvent> missed = jdbc.sql("""
                         SELECT id, type, data FROM rover_events WHERE rover_id = ? AND id > ? ORDER BY id LIMIT ?""")
-                .params(subscription.roverId(), lastEventId, properties.replayLimit() + 1)
+                .params(subscription.roverId(), lastEventId, limit + 1)
                 .query((rs, row) -> new StoredEvent(rs.getLong("id"), EventType.valueOf(rs.getString("type")), rs.getString("data")))
                 .list();
-        if (missed.size() > properties.replayLimit()) {
+        if (missed.size() > limit) {
             sendSnapshot(subscription, EventType.RESET); // too far behind: start over
             return;
         }
@@ -162,6 +188,10 @@ public class SseHub {
 
         long roverId() {
             return roverId;
+        }
+
+        synchronized long lastSentId() {
+            return lastSentId;
         }
 
         synchronized void send(long id, EventType type, String json) throws IOException {

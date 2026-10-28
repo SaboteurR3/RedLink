@@ -1,39 +1,58 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError, NetworkError, type ApiClient } from '../api/client';
-import { COMMAND_TYPES, type Camera, type Command, type CommandType, type Heading, type Mission, type RoverCommand } from '../api/types';
+import {
+  COMMAND_TYPES,
+  type Camera,
+  type Command,
+  type CommandType,
+  type Heading,
+  type LinkStatus,
+  type Mission,
+  type PlanPreview,
+  type Problem,
+  type Rover,
+  type RoverCommand,
+  type Specs,
+} from '../api/types';
+import { estimate, formatBattery } from '../console/estimate';
 import { describe } from './CommandTimeline';
-
-const HELP: Record<CommandType, string> = {
-  MOVE: '1 s per meter · −1 % battery per meter (−2 % on sand)',
-  ROTATE: '2 s per 90° turn, the shortest way',
-  TAKE_PHOTO: '3 s · +2 % storage',
-  DRILL_SAMPLE: '15 s · needs ≥ 30 % battery · waits for a flight director’s approval',
-  CHARGE: '+1 % battery per simulated minute',
-  REBOOT: '5 s · leaves safe mode',
-};
 
 const MAX_STEPS = 50;
 
-function explain(e: unknown): string {
-  return e instanceof ApiError ? e.describe() : e instanceof NetworkError ? 'Mission control is not reachable' : String(e);
+type Result = { ok: boolean; text: string; blocking?: NonNullable<Problem['blockingCommands']> };
+
+function explain(e: unknown): Result {
+  if (e instanceof ApiError) return { ok: false, text: e.describe(), blocking: e.problem.blockingCommands };
+  return { ok: false, text: e instanceof NetworkError ? 'Mission control is not reachable' : String(e) };
 }
 
 /**
  * Forms for the command dictionary, with its limits. A command is either sent at once or added to
- * a mission plan, which the server checks as a whole before anything is queued.
+ * a mission plan, which the server checks as a whole before anything is queued. Estimates and
+ * warnings come from the rover's published spec sheet and Earth's last knowledge; the server and
+ * the rover still decide.
  */
 export function CommandConsole({
   api,
   roverId,
+  rover,
+  specs,
+  link,
   onCommand,
   onMission,
+  onPreview,
 }: {
   api: ApiClient;
   roverId: number;
+  rover: Rover | null;
+  specs: Specs | null;
+  link: LinkStatus | null;
   onCommand: (c: Command) => void;
   onMission?: (m: Mission) => void;
+  /** The dry run of what is being prepared (the plan, or else the current command), for the map. */
+  onPreview?: (preview: PlanPreview | null) => void;
 }) {
-  const [type, setType] = useState<CommandType>('MOVE');
+  const [chosen, setType] = useState<CommandType>('MOVE');
   const [distance, setDistance] = useState(3);
   const [heading, setHeading] = useState<Heading>('EAST');
   const [camera, setCamera] = useState<Camera>('NAVCAM');
@@ -41,7 +60,12 @@ export function CommandConsole({
   const [plan, setPlan] = useState<RoverCommand[]>([]);
   const [planName, setPlanName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
+  const [preview, setPreview] = useState<PlanPreview | null>(null);
+
+  const safeMode = rover?.lastKnown.mode === 'SAFE_MODE';
+  // In safe mode the rover only accepts REBOOT: don't offer anything else.
+  const type: CommandType = safeMode ? 'REBOOT' : chosen;
 
   const build = (): RoverCommand => {
     switch (type) {
@@ -59,6 +83,35 @@ export function CommandConsole({
     }
   };
 
+  const guess = rover && specs ? estimate(build(), rover.lastKnown, specs, link) : null;
+
+  // Dry run of the plan (or the single command) after the user stops changing it, for the map.
+  const previewKey = JSON.stringify(plan.length ? plan : [build()]);
+  const lastReport = rover?.lastKnown.reportedAt;
+  useEffect(() => {
+    if (!onPreview) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api
+        .preview(roverId, JSON.parse(previewKey) as RoverCommand[])
+        .then((p) => {
+          if (cancelled) return;
+          setPreview(p);
+          onPreview(p);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setPreview(null);
+          onPreview(null);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // A new rover report changes the start of the plan.
+  }, [api, roverId, previewKey, lastReport, onPreview]);
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -71,7 +124,7 @@ export function CommandConsole({
         text: `Command #${command.id} ${command.status}${replayed ? ' (a retry: the server replayed its first answer)' : ''}`,
       });
     } catch (e) {
-      setResult({ ok: false, text: explain(e) });
+      setResult(explain(e));
     } finally {
       setBusy(false);
     }
@@ -92,17 +145,36 @@ export function CommandConsole({
       setPlan([]);
       setPlanName('');
     } catch (e) {
-      setResult({ ok: false, text: explain(e) });
+      setResult(explain(e));
     } finally {
       setBusy(false);
+    }
+  };
+
+  /** Withdraws a blocking command by following its own cancel link (the server says if it's possible). */
+  const cancelBlocking = async (commandId: number) => {
+    try {
+      const command = await api.command(commandId);
+      if (!command._links.cancel) {
+        setResult((r) => r && { ...r, text: `${r.text} — #${commandId} can no longer be cancelled` });
+        return;
+      }
+      const cancelled = await api.follow<Command>(command._links.cancel);
+      onCommand(cancelled);
+      setResult((r) => r && { ...r, blocking: r.blocking?.filter((b) => b.id !== commandId) });
+    } catch (e) {
+      setResult(explain(e));
     }
   };
 
   return (
     <form className="panel console" onSubmit={submit}>
       <h2>Command console</h2>
+      {safeMode && (
+        <p className="banner-safe">⚠ The rover is in safe mode: it only accepts REBOOT until Earth has looked at the problem.</p>
+      )}
       <div className="console-row">
-        <select value={type} onChange={(e) => setType(e.target.value as CommandType)} aria-label="Command">
+        <select value={type} onChange={(e) => setType(e.target.value as CommandType)} aria-label="Command" disabled={safeMode}>
           {COMMAND_TYPES.map((t) => (
             <option key={t} value={t}>
               {t}
@@ -137,11 +209,34 @@ export function CommandConsole({
         <button type="submit" disabled={busy}>
           {busy ? 'Sending…' : 'Send to rover'}
         </button>
-        <button type="button" className="secondary" disabled={busy || plan.length >= MAX_STEPS} onClick={() => setPlan([...plan, build()])}>
+        <button type="button" className="secondary" disabled={busy || safeMode || plan.length >= MAX_STEPS} onClick={() => setPlan([...plan, build()])}>
           Add to plan
         </button>
       </div>
-      <p className="muted">{HELP[type]}</p>
+
+      {guess && (
+        <div className="estimate">
+          <span>
+            ⏱ {guess.marsSeconds === null ? `${minutes} simulated min` : `${guess.marsSeconds} s on Mars`}
+          </span>
+          <span>🔋 {formatBattery(guess)}</span>
+          {guess.storage > 0 && <span>💾 +{guess.storage} %</span>}
+          {guess.seeResultSeconds !== null && <span className="muted">result on screen in about {guess.seeResultSeconds} s</span>}
+        </div>
+      )}
+      {preview && (
+        <p className={`preview-line ${preview.feasible ? 'ok' : 'error'}`}>
+          {preview.feasible
+            ? `Path checked: ends at (${preview.end.x}, ${preview.end.y}) facing ${preview.end.heading}, battery ${preview.end.batteryPercent} %`
+            : `Step ${preview.problem?.step} would fail: ${preview.problem?.reason}`}
+          {preview.roverBusy && ' (unfinished commands may change the start)'}
+        </p>
+      )}
+      {guess?.warnings.map((w) => (
+        <p key={w} className="warn small-text">
+          {w}
+        </p>
+      ))}
 
       {plan.length > 0 && (
         <div className="plan">
@@ -169,6 +264,25 @@ export function CommandConsole({
         </div>
       )}
       {result && <p className={result.ok ? 'ok' : 'error'}>{result.text}</p>}
+      {result?.blocking && result.blocking.length > 0 && (
+        <div className="blocking">
+          <p className="muted">These commands are still unfinished:</p>
+          <ul>
+            {result.blocking.map((b) => (
+              <li key={b.id}>
+                #{b.id} {b.type.replaceAll('_', ' ')} <span className="chip">{b.status.replaceAll('_', ' ')}</span>{' '}
+                {b.cancellable ? (
+                  <button type="button" className="small secondary" onClick={() => void cancelBlocking(b.id)}>
+                    Cancel
+                  </button>
+                ) : (
+                  <span className="muted">on its way, wait for it</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </form>
   );
 }

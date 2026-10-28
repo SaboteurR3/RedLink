@@ -6,8 +6,8 @@ import {
   headingToYaw,
   heightAt,
   rockCells,
+  worldToCell,
   shortestTurn,
-  terrainArrays,
   VERTICAL_EXAGGERATION,
   type Grid,
 } from './geometry';
@@ -42,13 +42,11 @@ describe('scene geometry', () => {
     expect(heightAt(grid, (x0 + x1) / 2, z)).toBeCloseTo(VERTICAL_EXAGGERATION); // halfway to 2 m
   });
 
-  it('builds one vertex per cell and two triangles per square', () => {
-    const { positions, colors, indices } = terrainArrays(grid);
-    expect(positions).toHaveLength(6 * 3);
-    expect(colors).toHaveLength(6 * 3);
-    expect(Array.from(indices)).toEqual([0, 3, 1, 1, 3, 4, 1, 4, 2, 2, 4, 5]);
-    expect(positions[2 * 3 + 1]).toBeCloseTo(15); // (2,0) at 10 m × 1.5
-    expect(colors.every((c) => c >= 0 && c <= 1)).toBe(true);
+  it('maps a world point back to its cell, and outside the map to null', () => {
+    const [wx, wz] = cellToWorld(grid, 2, 1);
+    expect(worldToCell(grid, wx, wz)).toEqual({ x: 2, y: 1 });
+    expect(worldToCell(grid, wx + 0.9, wz - 0.9)).toEqual({ x: 2, y: 1 }); // anywhere inside the 2 m cell
+    expect(worldToCell(grid, -10, 0)).toBeNull();
   });
 
   it('finds the rocks', () => {

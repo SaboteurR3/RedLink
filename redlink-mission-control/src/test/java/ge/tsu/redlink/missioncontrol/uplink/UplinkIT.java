@@ -3,11 +3,13 @@ package ge.tsu.redlink.missioncontrol.uplink;
 import ge.tsu.redlink.contract.command.CommandPacket;
 import ge.tsu.redlink.contract.command.RoverCommand;
 import ge.tsu.redlink.contract.link.PacketSigner;
+import ge.tsu.redlink.contract.link.TraceContext;
 import ge.tsu.redlink.missioncontrol.MutableClock;
 import ge.tsu.redlink.missioncontrol.MutableClockConfiguration;
 import ge.tsu.redlink.missioncontrol.TestcontainersConfiguration;
 import ge.tsu.redlink.missioncontrol.command.CommandNotCancellableException;
 import ge.tsu.redlink.missioncontrol.command.CommandService;
+import ge.tsu.redlink.missioncontrol.tracing.LinkTracing;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +21,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -70,6 +73,8 @@ class UplinkIT {
     JsonMapper jsonMapper;
     @Autowired
     JdbcClient jdbc;
+    @Autowired
+    LinkTracing tracing;
 
     @BeforeEach
     void reset() {
@@ -166,6 +171,48 @@ class UplinkIT {
         assertThat(sequenceByCreation.get(0)).isEqualTo(1);
         assertThat(sequenceByCreation.get(44)).isEqualTo(45);
         assertThat(jdbc.sql("SELECT count(*) FROM uplink_packets").query(Long.class).single()).isEqualTo(45);
+    }
+
+    // --- tracing (ticket 33) --------------------------------------------------------------------
+
+    @Test
+    void theOperatorsTraceTravelsWithTheCommandToTheRover() {
+        // The operator's request, as the HTTP server span would be.
+        String[] requestTrace = new String[1];
+        long id = tracing.inSpan(null, "operator request", () -> {
+            requestTrace[0] = tracing.currentTraceparent();
+            return submit(new RoverCommand.Move(3));
+        });
+        assertThat(requestTrace[0]).isNotNull();
+        String traceId = TraceContext.traceId(requestTrace[0]);
+        assertThat(column(id, "trace_parent")).isEqualTo(requestTrace[0]);
+
+        // Transmitted and sent later by schedulers, outside that request: still the same trace.
+        clock.set(TRANSMIT);
+        transmitter.transmitDue();
+        clock.set(ARRIVE);
+        dispatcher.dispatchDue();
+
+        StubRover.Received received = ROVER.received().get(0);
+        CommandPacket packet = jsonMapper.readValue(received.body(), CommandPacket.class);
+        assertThat(packet.traceparent()).isEqualTo(requestTrace[0]);
+        assertThat(TraceContext.traceId(received.traceparent())).isEqualTo(traceId);
+        // The header names the "uplink send" span, a child in the same trace.
+        assertThat(received.traceparent()).isNotEqualTo(requestTrace[0]);
+    }
+
+    @Test
+    void anUntracedCommandSendsNoTraceContext() {
+        submit(new RoverCommand.Move(3));
+        clock.set(TRANSMIT);
+        transmitter.transmitDue();
+        clock.set(ARRIVE);
+        dispatcher.dispatchDue();
+
+        StubRover.Received received = ROVER.received().get(0);
+        assertThat(new String(received.body(), StandardCharsets.UTF_8)).doesNotContain("traceparent");
+        // The send itself is a span (a new trace), so the rover still gets a header.
+        assertThat(received.traceparent()).matches(TraceContext.TRACEPARENT_PATTERN);
     }
 
     // --- delivery ------------------------------------------------------------------------------

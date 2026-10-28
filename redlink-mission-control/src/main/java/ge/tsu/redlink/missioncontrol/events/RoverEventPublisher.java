@@ -33,7 +33,13 @@ public class RoverEventPublisher {
                 .params(roverId, type.name(), json, Timestamp.from(clock.instant().truncatedTo(ChronoUnit.MICROS)))
                 .query(Long.class).single();
         applicationEvents.publishEvent(new RoverEventRecorded(id, roverId, type, json));
+        // Other instances learn about it from PostgreSQL. NOTIFY is transactional: delivered only
+        // on commit, like the in-memory event above. Only ids travel; listeners read the row.
+        jdbc.sql("SELECT pg_notify(?, ?)").params(CHANNEL, roverId + ":" + id).query().listOfRows();
     }
+
+    /** The PostgreSQL channel {@link RoverEventListener} listens on. */
+    static final String CHANNEL = "rover_events";
 
     /** In-memory notification; {@link SseHub} receives it after commit. */
     record RoverEventRecorded(long id, long roverId, EventType type, String json) {

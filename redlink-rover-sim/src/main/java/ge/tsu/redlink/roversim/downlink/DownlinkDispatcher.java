@@ -2,6 +2,7 @@ package ge.tsu.redlink.roversim.downlink;
 
 import ge.tsu.redlink.roversim.downlink.DownlinkClaims.ClaimedPacket;
 import ge.tsu.redlink.roversim.downlink.EarthLinkClient.Delivery;
+import ge.tsu.redlink.roversim.tracing.LinkTracing;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -28,6 +29,7 @@ public class DownlinkDispatcher {
     private final EarthLinkClient earth;
     private final DownlinkProperties properties;
     private final Clock clock;
+    private final LinkTracing tracing;
 
     /**
      * One round: claim due packets, send each, record the result. No transaction spans the HTTP
@@ -45,7 +47,7 @@ public class DownlinkDispatcher {
                 claims.scheduleRetry(packet.packetId(), linkDownUntil, "not sent: Earth asked to wait");
                 continue;
             }
-            Delivery delivery = earth.send(packet.json());
+            Delivery delivery = tracing.inSpan(packet.traceparent(), "downlink send", () -> earth.send(packet.json()));
             switch (delivery.outcome()) {
                 case DELIVERED -> claims.markSent(packet.packetId(), now());
                 case REJECTED -> {

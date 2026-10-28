@@ -1,5 +1,5 @@
 import type { Heading } from '../api/types';
-import { colorize, SURFACE_ROCK } from '../terrain/colorize';
+import { SURFACE_ROCK } from '../terrain/colorize';
 
 /** Relief is only a few meters on a 64 m site; a little exaggeration makes it readable. */
 export const VERTICAL_EXAGGERATION = 1.5;
@@ -47,42 +47,6 @@ export function heightAt(grid: Grid, worldX: number, worldZ: number): number {
   return lerp(top, bottom, fz);
 }
 
-/**
- * Vertex and index arrays for the terrain: one vertex per cell centre, two triangles per square
- * between four centres, counter-clockwise seen from above. Colours are linear RGB (three.js works
- * in linear space), from the same palette as the 2D map.
- */
-export function terrainArrays(grid: Grid): { positions: Float32Array; colors: Float32Array; indices: Uint32Array } {
-  const { width, height } = grid;
-  const positions = new Float32Array(width * height * 3);
-  const colors = new Float32Array(width * height * 3);
-  const rgba = colorize(grid.heights, grid.surfaces);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = y * width + x;
-      const [wx, wz] = cellToWorld(grid, x, y);
-      positions.set([wx, cellHeight(grid, x, y), wz], i * 3);
-      colors.set(
-        [srgbToLinear((rgba[i * 4] ?? 0) / 255), srgbToLinear((rgba[i * 4 + 1] ?? 0) / 255), srgbToLinear((rgba[i * 4 + 2] ?? 0) / 255)],
-        i * 3,
-      );
-    }
-  }
-  const indices = new Uint32Array((width - 1) * (height - 1) * 6);
-  let k = 0;
-  for (let y = 0; y < height - 1; y++) {
-    for (let x = 0; x < width - 1; x++) {
-      const a = y * width + x; // north-west
-      const b = a + 1; // north-east
-      const c = a + width; // south-west
-      const d = c + 1; // south-east
-      indices.set([a, c, b, b, c, d], k);
-      k += 6;
-    }
-  }
-  return { positions, colors, indices };
-}
-
 /** Cells the rover cannot enter: drawn as boulders. */
 export function rockCells(grid: Grid): Array<[number, number]> {
   const cells: Array<[number, number]> = [];
@@ -92,7 +56,12 @@ export function rockCells(grid: Grid): Array<[number, number]> {
   return cells;
 }
 
-const HEADING_DEGREES: Record<Heading, number> = { NORTH: 0, EAST: 90, SOUTH: 180, WEST: 270 };
+const HEADING_DEGREES: Record<Heading, number> = {
+  NORTH: 0,
+  EAST: 90,
+  SOUTH: 180,
+  WEST: 270,
+};
 
 /**
  * Rotation about +Y that turns a model facing −Z (north) to `heading`. Compass degrees run
@@ -125,4 +94,11 @@ export function srgbToLinear(c: number): number {
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+/** The grid cell under a world point, or null outside the map. */
+export function worldToCell(grid: Grid, worldX: number, worldZ: number): { x: number; y: number } | null {
+  const x = Math.floor(worldX / grid.metersPerCell + grid.width / 2);
+  const y = Math.floor(worldZ / grid.metersPerCell + grid.height / 2);
+  return x >= 0 && y >= 0 && x < grid.width && y < grid.height ? { x, y } : null;
 }

@@ -1,6 +1,7 @@
 package ge.tsu.redlink.roversim.downlink;
 
 import ge.tsu.redlink.contract.link.PacketSigner;
+import ge.tsu.redlink.roversim.tracing.LinkTracing;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -32,8 +33,9 @@ public class EarthLinkClient {
     private final RestClient restClient;
     private final PacketSigner signer;
     private final Clock clock;
+    private final LinkTracing tracing;
 
-    public EarthLinkClient(DownlinkProperties properties, PacketSigner signer, Clock clock) {
+    public EarthLinkClient(DownlinkProperties properties, PacketSigner signer, Clock clock, LinkTracing tracing) {
         HttpClient httpClient = HttpClient.newBuilder()
                 // The JDK client defaults to HTTP/2 and, over plain http, sends an "Upgrade: h2c"
                 // request; Tomcat does not accept that upgrade on a POST with a body and the
@@ -50,6 +52,7 @@ public class EarthLinkClient {
                 .build();
         this.signer = signer;
         this.clock = clock;
+        this.tracing = tracing;
     }
 
     public Delivery send(String packetJson) {
@@ -59,6 +62,13 @@ public class EarthLinkClient {
                     .uri(DOWNLINK_PATH)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header(PacketSigner.HEADER, signer.sign(body))
+                    .headers(headers -> {
+                        // Earth's server span joins the trace (the packet carries it too, signed).
+                        String traceparent = tracing.currentTraceparent();
+                        if (traceparent != null) {
+                            headers.set(LinkTracing.HEADER, traceparent);
+                        }
+                    })
                     .body(body)
                     // Judge the status ourselves instead of turning 4xx/5xx into exceptions.
                     .exchange((request, response) -> new Answer(response.getStatusCode(),

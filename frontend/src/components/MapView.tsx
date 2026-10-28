@@ -1,9 +1,11 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useCallback, useState } from 'react';
+import { markIntroSeen, shouldPlayIntro } from '../scene/introGate';
 import type { Scene3DProps } from '../scene/Scene3D';
 import { TerrainMap } from './TerrainMap';
 
 // three.js is large: only browsers that show the 3D view download it.
 const Scene3D = lazy(() => import('../scene/Scene3D'));
+const Intro = lazy(() => import('../scene/Intro'));
 
 type View = '2d' | '3d';
 const STORAGE_KEY = 'redlink.view';
@@ -30,6 +32,12 @@ function savedView(): View | null {
 export function MapView(props: Scene3DProps) {
   const [webgl] = useState(hasWebGL);
   const [view, setView] = useState<View>(() => (webgl ? (savedView() ?? '3d') : '2d'));
+  // The flight from Earth plays once per tab session, before the 3D site.
+  const [intro, setIntro] = useState(() => view === '3d' && webgl && shouldPlayIntro());
+  const endIntro = useCallback(() => {
+    markIntroSeen();
+    setIntro(false);
+  }, []);
 
   const choose = (next: View) => {
     setView(next);
@@ -43,6 +51,11 @@ export function MapView(props: Scene3DProps) {
   const { site } = props;
   return (
     <div className="panel map">
+      {intro && (
+        <Suspense fallback={<div className="intro" />}>
+          <Intro onDone={endIntro} />
+        </Suspense>
+      )}
       <div className="map-title">
         <h2>{site.name}</h2>
         <span className="muted">
@@ -62,7 +75,14 @@ export function MapView(props: Scene3DProps) {
           <Scene3D {...props} />
         </Suspense>
       ) : (
-        <TerrainMap api={props.api} site={site} rover={props.rover} />
+        <TerrainMap
+          api={props.api}
+          site={site}
+          rover={props.rover}
+          preview={props.preview}
+          target={props.target}
+          onCellClick={props.onCellClick}
+        />
       )}
     </div>
   );

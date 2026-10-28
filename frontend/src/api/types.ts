@@ -101,6 +101,19 @@ export type RoverEventMessage = {
   roverTime: string;
 };
 
+/**
+ * A drill sample (`sample` event, or a SAMPLE telemetry report). x, y and heading are where the
+ * rover stood; a ROCK sample comes from the next cell in its heading.
+ */
+export type Sample = {
+  commandId: number;
+  material: 'SOIL' | 'ROCK';
+  x: number;
+  y: number;
+  heading: Heading;
+  roverTime: string;
+};
+
 /** RFC 9457 Problem Details, as every API error is sent. */
 export type Problem = {
   type?: string;
@@ -109,16 +122,14 @@ export type Problem = {
   detail?: string;
   instance?: string;
   errors?: string[];
+  /** `rover-busy`: the unfinished commands that block a mission. */
+  blockingCommands?: { id: number; type: CommandType; status: CommandStatus; cancellable: boolean }[];
 };
 
-export const COMMAND_TYPES: readonly CommandType[] = [
-  'MOVE',
-  'ROTATE',
-  'TAKE_PHOTO',
-  'DRILL_SAMPLE',
-  'CHARGE',
-  'REBOOT',
-];
+/** The rover's published spec sheet (`GET /specs`): costs, limits, step durations. */
+export type Specs = Present<S['SpecsResponse']>;
+
+export const COMMAND_TYPES: readonly CommandType[] = ['MOVE', 'ROTATE', 'TAKE_PHOTO', 'DRILL_SAMPLE', 'CHARGE', 'REBOOT'];
 
 export const FINAL_STATUSES: ReadonlySet<CommandStatus> = new Set<CommandStatus>([
   'COMPLETED',
@@ -127,3 +138,31 @@ export const FINAL_STATUSES: ReadonlySet<CommandStatus> = new Set<CommandStatus>
   'CANCELLED',
   'REJECTED',
 ]);
+
+/** One position along a previewed plan; `step` −1 is the start. */
+export type PathPoint = Present<S['PathPoint']>;
+
+/** A dry run of a command or plan (`POST /plan-previews`). */
+export type PlanPreview = Omit<Present<S['PlanPreviewResponse']>, 'path' | 'end' | 'problem'> & {
+  path: PathPoint[];
+  end: Present<S['Forecast']>;
+  /** The first step that would fail (one-based), and the cell a failing drive would enter. */
+  problem: { step: number; reason: string; x: number | null; y: number | null } | null;
+};
+
+/** The cheapest drive to a cell (`POST /routes`): the commands and their preview. */
+export type RouteProposal = { steps: RoverCommand[]; preview: PlanPreview };
+
+export const WEBHOOK_EVENTS = ['command.completed', 'command.failed', 'rover.safe_mode', 'rover.battery_low'] as const;
+export type Webhook = Omit<Present<S['WebhookResponse']>, '_links'>;
+/** Only in the answer to the registration: the signing secret, shown this once. */
+export type CreatedWebhook = Omit<Present<S['CreatedWebhookResponse']>, '_links'>;
+export type Delivery = Omit<Present<S['DeliveryResponse']>, 'deliveredAt' | 'nextAttemptAt' | 'lastStatusCode' | 'lastError'> & {
+  deliveredAt: string | null;
+  nextAttemptAt: string | null;
+  lastStatusCode: number | null;
+  lastError: string | null;
+};
+
+export type AuditEntry = Omit<Present<S['AuditEntryResponse']>, 'detail'> & { detail: string | null };
+export type AuditAction = AuditEntry['action'];

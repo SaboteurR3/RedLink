@@ -3,6 +3,7 @@ package ge.tsu.redlink.roversim.flight;
 import ge.tsu.redlink.contract.command.RoverCommand;
 import ge.tsu.redlink.contract.rover.Heading;
 import ge.tsu.redlink.contract.rover.RoverMode;
+import ge.tsu.redlink.contract.telemetry.SampleMaterial;
 import ge.tsu.redlink.contract.rover.RoverSpecs;
 import ge.tsu.redlink.contract.terrain.SurfaceType;
 import ge.tsu.redlink.contract.terrain.Terrain;
@@ -41,13 +42,13 @@ public final class FlightRules {
         // Java 17 has no pattern matching for switch; switching on the type enum keeps the
         // compiler's exhaustiveness check (a new CommandType is a compile error here).
         return switch (command.type()) {
-            case MOVE -> new Plan(((RoverCommand.Move) command).distanceMeters(), Duration.ofSeconds(1));
+            case MOVE -> new Plan(((RoverCommand.Move) command).distanceMeters(), RoverSpecs.MOVE_STEP);
             case ROTATE -> new Plan(Math.abs(quarterTurns(rover.heading(), ((RoverCommand.Rotate) command).heading())),
-                    Duration.ofSeconds(2));
-            case TAKE_PHOTO -> new Plan(1, Duration.ofSeconds(3));
-            case DRILL_SAMPLE -> new Plan(1, Duration.ofSeconds(15));
+                    RoverSpecs.ROTATE_STEP);
+            case TAKE_PHOTO -> new Plan(1, RoverSpecs.PHOTO_TIME);
+            case DRILL_SAMPLE -> new Plan(1, RoverSpecs.DRILL_TIME);
             case CHARGE -> new Plan(((RoverCommand.Charge) command).minutes(), chargeMinute);
-            case REBOOT -> new Plan(1, Duration.ofSeconds(5));
+            case REBOOT -> new Plan(1, RoverSpecs.REBOOT_TIME);
         };
     }
 
@@ -78,6 +79,16 @@ public final class FlightRules {
                     ? CHARGE_PER_MINUTE * RoverSpecs.DUST_STORM_CHARGE_FACTOR : CHARGE_PER_MINUTE));
             case REBOOT -> new StepOutcome.Advanced(rover.inMode(RoverMode.NOMINAL));
         };
+    }
+
+    /**
+     * What a drill at the rover's position takes: the rock in the cell it faces if there is one,
+     * otherwise the soil just in front of its wheels. The rock stays; only a core is taken.
+     */
+    public static SampleMaterial sampleMaterial(RoverSnapshot rover, Terrain terrain) {
+        int aheadX = rover.x() + dx(rover.heading());
+        int aheadY = rover.y() + dy(rover.heading());
+        return terrain.contains(aheadX, aheadY) && terrain.isBlocked(aheadX, aheadY) ? SampleMaterial.ROCK : SampleMaterial.SOIL;
     }
 
     private static StepOutcome moveOneMeter(RoverSnapshot rover, Terrain terrain) {

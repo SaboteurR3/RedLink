@@ -52,13 +52,16 @@ class StubRover {
     private void handle(HttpExchange exchange) throws IOException {
         byte[] body = exchange.getRequestBody().readAllBytes();
         received.add(new Received(body, exchange.getRequestHeaders().getFirst("X-Link-Signature"),
-                exchange.getRequestHeaders().getFirst("Upgrade")));
+                exchange.getRequestHeaders().getFirst("Upgrade"), exchange.getRequestHeaders().getFirst("traceparent")));
         Integer status = script.poll();
         exchange.sendResponseHeaders(status == null ? 202 : status, -1);
         exchange.close();
     }
 
-    /** @param upgrade the Upgrade header; must be absent (Tomcat cannot upgrade a POST with a body) */
-    record Received(byte[] body, String signature, String upgrade) {
+    /**
+     * @param upgrade     the Upgrade header; must be absent (Tomcat cannot upgrade a POST with a body)
+     * @param traceparent the W3C trace header, if any
+     */
+    record Received(byte[] body, String signature, String upgrade, String traceparent) {
     }
 }

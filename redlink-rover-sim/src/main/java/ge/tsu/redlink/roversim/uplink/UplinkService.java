@@ -6,6 +6,7 @@ import ge.tsu.redlink.contract.telemetry.CommandExecutionStatus;
 import ge.tsu.redlink.contract.telemetry.TelemetryPayload;
 import ge.tsu.redlink.roversim.downlink.TelemetryOutbox;
 import ge.tsu.redlink.roversim.rover.RoverStateRepository;
+import ge.tsu.redlink.roversim.tracing.LinkTracing;
 import ge.tsu.redlink.roversim.uplink.UplinkExceptions.UnknownRoverException;
 import ge.tsu.redlink.roversim.uplink.UplinkExceptions.UplinkConflictException;
 import ge.tsu.redlink.roversim.uplink.UplinkExceptions.UplinkConflictException.Kind;
@@ -34,6 +35,7 @@ public class UplinkService {
     private final TelemetryOutbox telemetry;
     private final JsonMapper jsonMapper;
     private final Clock clock;
+    private final LinkTracing tracing;
 
     /**
      * Stores the command and queues a RECEIVED report for Earth, both in one transaction.
@@ -43,6 +45,11 @@ public class UplinkService {
      */
     @Transactional
     public UplinkReceipt receive(CommandPacket packet) {
+        // Continue Earth's trace from the signed packet, so the RECEIVED report carries it too.
+        return tracing.inSpan(packet.traceparent(), "rover receive", () -> store(packet));
+    }
+
+    private UplinkReceipt store(CommandPacket packet) {
         if (!rovers.existsById(packet.roverId())) {
             throw new UnknownRoverException(packet.roverId());
         }
@@ -50,7 +57,7 @@ public class UplinkService {
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         int inserted = commands.insertIfAbsent(packet.packetId(), packet.roverId(), packet.commandId(),
                 packet.sequenceNo(), packet.command().type().name(), jsonMapper.writeValueAsString(packet.command()),
-                packet.sentAt(), now);
+                packet.sentAt(), now, packet.traceparent());
 
         if (inserted == 0) {
             return duplicateOrConflict(packet);

@@ -37,7 +37,8 @@ public class UplinkClaims {
                             ORDER BY next_attempt_at, created_at
                             LIMIT :limit
                             FOR UPDATE SKIP LOCKED)
-                        RETURNING packet_id, command_id, packet, attempts, created_at""")
+                        RETURNING packet_id, command_id, packet, attempts, created_at,
+                                  packet::jsonb ->> 'traceparent' AS traceparent""")
                 .param("now", Timestamp.from(now))
                 .param("leaseUntil", Timestamp.from(leaseUntil))
                 .param("limit", limit)
@@ -46,7 +47,8 @@ public class UplinkClaims {
                         rs.getLong("command_id"),
                         rs.getString("packet"),
                         rs.getInt("attempts"),
-                        rs.getTimestamp("created_at").toInstant()))
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getString("traceparent")))
                 .list()
                 .stream()
                 .sorted(Comparator.comparing(ClaimedPacket::createdAt))
@@ -77,6 +79,8 @@ public class UplinkClaims {
         return error == null || error.length() <= 500 ? error : error.substring(0, 500);
     }
 
-    public record ClaimedPacket(UUID packetId, long commandId, String json, int attempts, Instant createdAt) {
+    /** @param traceparent the trace of the command, read from the packet itself (null if untraced) */
+    public record ClaimedPacket(UUID packetId, long commandId, String json, int attempts, Instant createdAt,
+                                String traceparent) {
     }
 }

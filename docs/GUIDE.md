@@ -59,7 +59,7 @@ The rover understands exactly six orders. Anything else is refused.
 | **MOVE** | drives forward in the direction it faces | 1–20 meters, whole numbers only | 1 s per meter | 1 % battery per meter, 2 % in sand |
 | **ROTATE** | turns to face North, East, South or West | one of the four | 2 s per quarter turn | 0.2 % per quarter turn |
 | **TAKE_PHOTO** | takes a picture with a camera | NAVCAM (wide, black and white) or MASTCAM (narrow, colour) | 3 s | 0.5 % battery, 2 % storage |
-| **DRILL_SAMPLE** | drills a soil sample | — | 15 s | 8 % battery, 5 % storage; needs at least 30 % battery; **needs approval** |
+| **DRILL_SAMPLE** | drills a sample: the rock in front of the rover if there is one, otherwise the soil | — | 15 s | 8 % battery, 5 % storage; needs at least 30 % battery; **needs approval** |
 | **CHARGE** | charges from the solar panels | 1–120 minutes | 1 s per minute in the demo | +1 % battery per minute (only +0.25 % in a dust storm) |
 | **REBOOT** | restarts the rover's computer | — | 5 s | leaves safe mode |
 
@@ -163,22 +163,65 @@ These are the rules RedLink enforces. Each one has a reason.
 20. **5 wrong passwords in 15 minutes** block further attempts from that computer for that
     username for a while. Other computers are not affected, so nobody can lock a real operator out.
 21. Each user sees only **their own** webhooks.
+22. **At most 30 orders or missions at once per person, then 30 a minute.** Faster than that,
+    mission control answers "too many requests, try again in N seconds". A normal operator never
+    notices; a runaway script is slowed down.
+23. **Everything that changes something is written down** in the audit log: who sent, cancelled,
+    approved or rejected an order or a mission, who declared or ended a conjunction, who added or
+    removed a webhook, and when. Only flight directors can read it.
 
 ## 7. What you see on the screen
 
-- **Top bar:** "● live" when the live connection works; your name and role; Log out.
+- **Top bar:** the **rover picker** (two rovers: Perseverance-sim in Jezero crater and
+  Curiosity-sim in Gale crater, each on its own map; ⚠ marks one in safe mode; the choice is
+  remembered); "● live" when the live connection works; your name and role; Log out. Everything on
+  the screen is about the chosen rover.
+- **The intro:** after login, once per browser tab, a short film (about 7 s):
+  - Earth with clouds and a glowing atmosphere, with the title;
+  - a command's radio pulse racing to Mars;
+  - Mars with its craters and canyon;
+  - then it fades into the site.
+  Skip it with the button or Esc. It is not shown when the system asks for reduced motion.
 - **The map (3D):**
-  - the crater with its rocks;
+  - the 64 × 64 m site with its rocks and pebbles, in fine detail up close;
+  - around it, scenery out to about 700 m: hills, impact craters, the crater rim as a mountain wall
+    on the horizon and a layered peak to the south-east. It is decoration only: the rover can
+    drive only on the site. Zoom out (up to 160 m) or drag the view low to see the horizon;
   - the rover where it was last reported (it glides when a new report arrives);
   - light beams for orders on their way;
   - small blue camera pins where photos were taken;
+  - drill marks with a small yellow flag: a dark hole with pale tailings where soil was drilled,
+    or a pale scar with a dark core hole on the side of a rock that was drilled (the rock stays,
+    only a core is taken);
   - the ghost rover for a planned mission;
-  - a red pulsing light in safe mode;
-  - drifting dust (more of it in a dust storm).
+  - a red pulsing light in safe mode, and a pulsing red frame with "SAFE MODE — only REBOOT is
+    accepted" over the view;
+  - drifting dust; in a dust storm, more and faster dust, a darker brown sky and a dust wall around
+    the crater;
+  - a Mars day (a "sol", compressed to 12 minutes, the clock is in the corner): the sun moves, the
+    sunset is blue, from dusk the stars come out (coloured, the brightest glowing and twinkling), Phobos and Deimos cross the sky and the rover's headlights go on;
+  - wheel tracks along where the rover reported being;
+  - the rover's wheels turn while it drives, its mast turns and flashes for a photo, and the drill
+    lowers for a sample;
+  - the relay orbiter crossing the sky: with relay windows on, it is up exactly while the window is
+    open, which is when orders can go out;
+  - a minimap in the corner (click it to drive there, like the big map).
+
+  After you log in, a short flight from Earth to Mars plays once (Skip or Esc ends it; it never plays
+  when the computer asks for reduced motion).
+
+  For a demo, add `?sol=0.5` (noon), `?sol=0.75` (dusk) or `?sol=0.02` (night) to the address to
+  fix the time of day, and `?storm=1` to show a dust storm.
 
   The buttons switch the camera between **Orbit** (drag to look around), **Follow** (behind the
   rover) and **Top-down**. **2D** shows a flat map instead (also used automatically on computers
   without 3D graphics).
+- **Click on the map** (3D or 2D) to drive there: RedLink plans the cheapest way around rocks and steep
+  slopes, draws it, and shows how long it takes and how much battery is left. **Drive there** sends
+  it as a mission.
+- **Path preview:** while you prepare an order or a plan in the console, its path is drawn on the map
+  (green; amber with a red box where it would fail), and the console says where it ends or which
+  step would fail.
 - **Rover panel:** mode, battery, position and heading, temperature, storage, and how long ago the
   last report was made (Mars time).
 - **Deep-space link panel:**
@@ -193,7 +236,24 @@ These are the rules RedLink enforces. Each one has a reason.
   - choose an order and its value, then **Send to rover**;
   - or **Add to plan** several orders, give the plan a name and **Send mission**.
 
+  Under the form, an estimate shows the time on Mars, the battery and storage cost, and roughly
+  when you will see the result; warnings appear for orders that would do nothing ("already faces
+  WEST") or fail (not enough battery). In safe mode only REBOOT can be chosen.
   The answer appears below: the order number and status, or the reason it was refused.
+  If a mission is refused because orders are still unfinished, they are listed with Cancel
+  buttons.
+- **Top bar for flight directors:** a yellow badge "⚑ N to approve" opens the list of drills waiting for
+  a decision, with Approve / Reject. Your own drills are listed as waiting for another director.
+- **Notifications** pop up at the bottom right for a few seconds: an order completed, failed or was
+  cancelled, a rover warning (safe mode, dust storm), a conjunction, a new photo.
+- **Missions panel:** your missions with their status and a progress bar; **Cancel mission** while
+  steps are still on Earth.
+- **Photo viewer:** click the big photo to see it full size, download it, or **Show on map** to fly
+  the camera to where it was taken; a blue see-through wedge shows what the camera saw (wide for
+  NAVCAM, narrow for MASTCAM).
+- **Webhooks** (top bar): register an address to notify, see what was delivered, send a test, delete.
+- **Audit** (top bar, flight directors): who changed what and when, newest first, filtered by user
+  or kind of change, with Newer / Older pages.
 - **Commands list:**
   - every order, newest first, with its status;
   - for mission steps, a chip like `M3·2` (mission 3, step 2);

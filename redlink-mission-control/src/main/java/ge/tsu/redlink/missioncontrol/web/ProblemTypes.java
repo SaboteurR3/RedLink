@@ -18,6 +18,7 @@ public final class ProblemTypes {
     public static final URI FORBIDDEN = of("forbidden");
     public static final URI INVALID_CREDENTIALS = of("invalid-credentials");
     public static final URI TOO_MANY_LOGIN_ATTEMPTS = of("too-many-login-attempts");
+    public static final URI RATE_LIMITED = of("rate-limited");
     public static final URI INVALID_LINK_SIGNATURE = of("invalid-link-signature");
     public static final URI PACKET_TOO_LARGE = of("packet-too-large");
 
@@ -49,6 +50,7 @@ public final class ProblemTypes {
     public static final URI MISSION_PLAN_INFEASIBLE = of("mission-plan-infeasible");
     public static final URI MISSION_NOT_CANCELLABLE = of("mission-not-cancellable");
     public static final URI ROVER_BUSY = of("rover-busy");
+    public static final URI NO_ROUTE = of("no-route");
     public static final URI LINK_UNAVAILABLE = of("link-unavailable");
     public static final URI METHOD_NOT_ALLOWED = of("method-not-allowed");
     public static final URI NOT_ACCEPTABLE = of("not-acceptable");

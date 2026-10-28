@@ -1,7 +1,10 @@
 package ge.tsu.redlink.contract.command;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import ge.tsu.redlink.contract.link.TraceContext;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 
 import java.time.Instant;
@@ -18,6 +21,7 @@ import java.util.UUID;
  *                   the packets arrive in
  * @param command    what to do
  * @param sentAt     when Earth transmitted the packet
+ * @param traceparent W3C trace context of the request that created the command; optional
  */
 public record CommandPacket(
         @NotNull UUID packetId,
@@ -25,5 +29,13 @@ public record CommandPacket(
         @Positive long commandId,
         @Positive long sequenceNo,
         @NotNull @Valid RoverCommand command,
-        @NotNull Instant sentAt) {
+        @NotNull Instant sentAt,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        @Pattern(regexp = TraceContext.TRACEPARENT_PATTERN) String traceparent) {
+
+    /** Without trace context (an untraced sender). */
+    public CommandPacket(UUID packetId, long roverId, long commandId, long sequenceNo, RoverCommand command,
+                         Instant sentAt) {
+        this(packetId, roverId, commandId, sequenceNo, command, sentAt, null);
+    }
 }

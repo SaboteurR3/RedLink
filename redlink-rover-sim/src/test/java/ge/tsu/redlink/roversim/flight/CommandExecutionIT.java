@@ -2,8 +2,10 @@ package ge.tsu.redlink.roversim.flight;
 
 import ge.tsu.redlink.contract.command.CommandPacket;
 import ge.tsu.redlink.contract.command.RoverCommand;
+import ge.tsu.redlink.contract.link.TraceContext;
 import ge.tsu.redlink.contract.rover.Camera;
 import ge.tsu.redlink.contract.rover.Heading;
+import ge.tsu.redlink.contract.rover.RoverSpecs;
 import ge.tsu.redlink.contract.terrain.SurfaceType;
 import ge.tsu.redlink.contract.terrain.Terrain;
 import ge.tsu.redlink.roversim.MutableClock;
@@ -121,6 +123,43 @@ class CommandExecutionIT {
     }
 
     @Test
+    void drillingFacingARockSendsARockSampleAndTheRockStays() {
+        int[] cell = cellSouthOfARock();
+        placeRover(cell[0], cell[1], Heading.NORTH);
+        long id = receive(1, new RoverCommand.DrillSample());
+
+        tick(Duration.ZERO);
+        tick(RoverSpecs.DRILL_TIME);
+
+        assertThat(commandStatus(id)).isEqualTo("COMPLETED");
+        Map<String, Object> sample = jdbc.sql("""
+                        SELECT packet->'payload'->>'commandId' AS command_id, packet->'payload'->>'material' AS material,
+                               packet->'payload'->>'x' AS x, packet->'payload'->>'y' AS y,
+                               packet->'payload'->>'heading' AS heading
+                        FROM downlink_packets WHERE type = 'SAMPLE'""")
+                .query().singleRow();
+        assertThat(sample).containsEntry("command_id", String.valueOf(id)).containsEntry("material", "ROCK")
+                .containsEntry("x", String.valueOf(cell[0])).containsEntry("y", String.valueOf(cell[1]))
+                .containsEntry("heading", "NORTH");
+        assertThat(terrains.get("jezero-sim").isBlocked(cell[0], cell[1] - 1)).isTrue();
+        assertThat(reportedStatuses(id)).endsWith("COMPLETED 100");
+    }
+
+    @Test
+    void drillingOnOpenGroundSendsASoilSample() {
+        int[] cell = cellSouthOfARock();
+        placeRover(cell[0], cell[1], Heading.SOUTH); // its back to the rock
+        assertThat(terrains.get("jezero-sim").isBlocked(cell[0], cell[1] + 1)).as("open ground ahead").isFalse();
+        long id = receive(1, new RoverCommand.DrillSample());
+
+        tick(Duration.ZERO);
+        tick(RoverSpecs.DRILL_TIME);
+
+        assertThat(jdbc.sql("SELECT packet->'payload'->>'material' FROM downlink_packets WHERE type = 'SAMPLE'")
+                .query(String.class).single()).isEqualTo("SOIL");
+    }
+
+    @Test
     void packetsArrivingOutOfOrderRunInSequenceOrder() {
         long second = receive(2, new RoverCommand.Rotate(Heading.WEST));
         tick(Duration.ZERO);
@@ -187,6 +226,26 @@ class CommandExecutionIT {
         tick(Duration.ofSeconds(5));
         assertThat(commandStatus(reboot)).isEqualTo("COMPLETED");
         assertThat(mode()).isEqualTo("NOMINAL");
+    }
+
+    @Test
+    void everyReportAboutATracedCommandContinuesEarthsTrace() {
+        String traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        String earth = "00-" + traceId + "-00f067aa0ba902b7-01";
+        long id = nextCommandId++;
+        uplink.receive(new CommandPacket(UUID.randomUUID(), ROVER, id, 1, new RoverCommand.Move(1), clock.instant(), earth));
+        tick(Duration.ZERO);
+        tick(Duration.ofSeconds(1));
+        assertThat(commandStatus(id)).isEqualTo("COMPLETED");
+
+        assertThat(jdbc.sql("SELECT trace_parent FROM received_commands WHERE command_id = ?").param(id)
+                .query(String.class).single()).isEqualTo(earth);
+        // RECEIVED, EXECUTING, the new position and COMPLETED: all in Earth's trace, each from its own span.
+        List<String> traces = jdbc.sql("SELECT packet ->> 'traceparent' FROM downlink_packets ORDER BY created_at")
+                .query(String.class).list();
+        assertThat(traces).hasSizeGreaterThanOrEqualTo(4)
+                .allSatisfy(t -> assertThat(TraceContext.traceId(t)).isEqualTo(traceId))
+                .doesNotContain(earth);
     }
 
     // --- helpers -------------------------------------------------------------------------------

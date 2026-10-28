@@ -1,6 +1,7 @@
 package ge.tsu.redlink.missioncontrol.uplink;
 
 import ge.tsu.redlink.contract.link.PacketSigner;
+import ge.tsu.redlink.missioncontrol.tracing.LinkTracing;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -27,8 +28,9 @@ public class RoverLinkClient {
 
     private final RestClient restClient;
     private final PacketSigner signer;
+    private final LinkTracing tracing;
 
-    public RoverLinkClient(UplinkProperties properties, PacketSigner signer) {
+    public RoverLinkClient(UplinkProperties properties, PacketSigner signer, LinkTracing tracing) {
         HttpClient httpClient = HttpClient.newBuilder()
                 // Over plain http the JDK client would try an "Upgrade: h2c" that Tomcat cannot
                 // handle for a POST with a body (found in ticket 07).
@@ -43,6 +45,7 @@ public class RoverLinkClient {
                 .requestFactory(requestFactory)
                 .build();
         this.signer = signer;
+        this.tracing = tracing;
     }
 
     public Delivery send(String packetJson) {
@@ -52,6 +55,13 @@ public class RoverLinkClient {
                     .uri(UPLINK_PATH)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header(PacketSigner.HEADER, signer.sign(body))
+                    .headers(headers -> {
+                        // The rover's server span joins the trace (the packet carries it too, signed).
+                        String traceparent = tracing.currentTraceparent();
+                        if (traceparent != null) {
+                            headers.set(LinkTracing.HEADER, traceparent);
+                        }
+                    })
                     .body(body)
                     .exchange((request, response) -> response.getStatusCode());
             if (status.is2xxSuccessful()) {

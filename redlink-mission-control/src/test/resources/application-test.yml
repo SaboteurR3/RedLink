@@ -14,6 +14,11 @@ redlink:
     rover-url: http://localhost:9
     connect-timeout: 1s
     read-timeout: 2s
+  rate-limit:
+    # Many tests send as the same user; RateLimitIT sets its own small limit.
+    submissions:
+      capacity: 100000
+      per: 1m
   events:
     # Small, so the "too far behind → reset" path is easy to test.
     replay-limit: 3

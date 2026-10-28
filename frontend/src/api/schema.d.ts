@@ -66,6 +66,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rovers/{roverId}/routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan a drive to a cell
+         * @description The cheapest route around rocks and steep slopes from the last known position, as ROTATE/MOVE commands with their preview. Sends nothing; submit the steps as a mission. 422 no-route if unreachable.
+         */
+        post: operations["route"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rovers/{roverId}/plan-previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview a command or plan (dry run)
+         * @description Simulates the steps from Earth's last known state on the terrain with the rover's specs: the path cell by cell, the end state and the first step that would fail. Sends nothing.
+         */
+        post: operations["preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rovers/{roverId}/missions": {
         parameters: {
             query?: never;
@@ -279,6 +319,26 @@ export interface paths {
         };
         /** Delivery log, newest first */
         get: operations["deliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/specs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The rover's spec sheet
+         * @description Costs in battery and storage percent, limits, step durations.
+         */
+        get: operations["specs"];
         put?: never;
         post?: never;
         delete?: never;
@@ -511,6 +571,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The audit log
+         * @description Newest first; [from, to) range. Paged, with RFC 8288 Link headers.
+         */
+        get: operations["search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -545,6 +625,12 @@ export interface components {
             href?: string;
             method?: string;
         };
+        RouteRequest: {
+            /** Format: int32 */
+            x?: number;
+            /** Format: int32 */
+            y?: number;
+        };
         Charge: Omit<components["schemas"]["RoverCommand"], "type"> & {
             /** Format: int32 */
             minutes?: number;
@@ -562,9 +648,19 @@ export interface components {
              */
             type: "DRILL_SAMPLE";
         };
-        MissionRequest: {
-            name: string;
-            steps: (components["schemas"]["Charge"] | components["schemas"]["DrillSample"] | components["schemas"]["Move"] | components["schemas"]["Reboot"] | components["schemas"]["Rotate"] | components["schemas"]["TakePhoto"])[];
+        Forecast: {
+            /** Format: int32 */
+            x?: number;
+            /** Format: int32 */
+            y?: number;
+            /** @enum {string} */
+            heading?: "NORTH" | "EAST" | "SOUTH" | "WEST";
+            /** Format: double */
+            batteryPercent?: number;
+            /** Format: int32 */
+            storageUsedPercent?: number;
+            /** @enum {string} */
+            mode?: "NOMINAL" | "SAFE_MODE";
         };
         Move: Omit<components["schemas"]["RoverCommand"], "type"> & {
             /** Format: int32 */
@@ -575,6 +671,40 @@ export interface components {
              * @enum {string}
              */
             type: "MOVE";
+        };
+        PathPoint: {
+            /** Format: int32 */
+            step?: number;
+            /** Format: int32 */
+            x?: number;
+            /** Format: int32 */
+            y?: number;
+            /** @enum {string} */
+            heading?: "NORTH" | "EAST" | "SOUTH" | "WEST";
+            /** Format: double */
+            batteryPercent?: number;
+            /** Format: int32 */
+            storageUsedPercent?: number;
+        };
+        PlanPreviewResponse: {
+            feasible?: boolean;
+            path?: components["schemas"]["PathPoint"][];
+            end?: components["schemas"]["Forecast"];
+            problem?: components["schemas"]["PlanProblem"];
+            /** Format: double */
+            marsSeconds?: number;
+            /** Format: int32 */
+            chargeMinutes?: number;
+            roverBusy?: boolean;
+        };
+        PlanProblem: {
+            /** Format: int32 */
+            step?: number;
+            reason?: string;
+            /** Format: int32 */
+            x?: number;
+            /** Format: int32 */
+            y?: number;
         };
         Reboot: Omit<components["schemas"]["RoverCommand"], "type"> & {
             /**
@@ -593,6 +723,10 @@ export interface components {
              */
             type: "ROTATE";
         };
+        RouteResponse: {
+            steps?: (components["schemas"]["Charge"] | components["schemas"]["DrillSample"] | components["schemas"]["Move"] | components["schemas"]["Reboot"] | components["schemas"]["Rotate"] | components["schemas"]["TakePhoto"])[];
+            preview?: components["schemas"]["PlanPreviewResponse"];
+        };
         RoverCommand: {
             type: string;
         };
@@ -605,6 +739,13 @@ export interface components {
              * @enum {string}
              */
             type: "TAKE_PHOTO";
+        };
+        PlanPreviewRequest: {
+            steps: (components["schemas"]["Charge"] | components["schemas"]["DrillSample"] | components["schemas"]["Move"] | components["schemas"]["Reboot"] | components["schemas"]["Rotate"] | components["schemas"]["TakePhoto"])[];
+        };
+        MissionRequest: {
+            name: string;
+            steps: (components["schemas"]["Charge"] | components["schemas"]["DrillSample"] | components["schemas"]["Move"] | components["schemas"]["Reboot"] | components["schemas"]["Rotate"] | components["schemas"]["TakePhoto"])[];
         };
         Approval: {
             /** @enum {string} */
@@ -649,20 +790,6 @@ export interface components {
         Failure: {
             code?: string;
             detail?: string;
-        };
-        Forecast: {
-            /** Format: int32 */
-            x?: number;
-            /** Format: int32 */
-            y?: number;
-            /** @enum {string} */
-            heading?: "NORTH" | "EAST" | "SOUTH" | "WEST";
-            /** Format: double */
-            batteryPercent?: number;
-            /** Format: int32 */
-            storageUsedPercent?: number;
-            /** @enum {string} */
-            mode?: "NOMINAL" | "SAFE_MODE";
         };
         MissionResponse: {
             /** Format: int64 */
@@ -721,25 +848,25 @@ export interface components {
             float?: boolean;
             number?: boolean;
             floatingPointNumber?: boolean;
-            valueNode?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            valueNode?: boolean;
             container?: boolean;
-            string?: boolean;
-            object?: boolean;
             missingNode?: boolean;
+            object?: boolean;
             integralNumber?: boolean;
+            string?: boolean;
             short?: boolean;
+            pojo?: boolean;
+            int?: boolean;
+            bigDecimal?: boolean;
+            binary?: boolean;
+            long?: boolean;
+            bigInteger?: boolean;
+            double?: boolean;
             /** @deprecated */
             textual?: boolean;
             boolean?: boolean;
-            pojo?: boolean;
-            binary?: boolean;
-            int?: boolean;
-            double?: boolean;
-            long?: boolean;
-            bigInteger?: boolean;
-            bigDecimal?: boolean;
             embeddedValue?: boolean;
         };
         LastKnownState: {
@@ -812,6 +939,40 @@ export interface components {
         PagedModelDeliveryResponse: {
             content?: components["schemas"]["DeliveryResponse"][];
             page?: components["schemas"]["PageMetadata"];
+        };
+        SpecsResponse: {
+            /** Format: double */
+            maxSlopeDegrees?: number;
+            /** Format: double */
+            moveCostPerMeterGround?: number;
+            /** Format: double */
+            moveCostPerMeterSand?: number;
+            /** Format: double */
+            rotateCost?: number;
+            /** Format: double */
+            photoCost?: number;
+            /** Format: int32 */
+            photoStorage?: number;
+            /** Format: double */
+            drillCost?: number;
+            /** Format: double */
+            drillMinBattery?: number;
+            /** Format: int32 */
+            drillStorage?: number;
+            /** Format: double */
+            chargePerMinute?: number;
+            /** Format: double */
+            dustStormChargeFactor?: number;
+            /** Format: double */
+            moveSecondsPerMeter?: number;
+            /** Format: double */
+            rotateSecondsPerQuarterTurn?: number;
+            /** Format: double */
+            photoSeconds?: number;
+            /** Format: double */
+            drillSeconds?: number;
+            /** Format: double */
+            rebootSeconds?: number;
         };
         Cell: {
             /** Format: int32 */
@@ -911,6 +1072,24 @@ export interface components {
              */
             type: "ROVER_STATE";
         };
+        Sample: Omit<components["schemas"]["TelemetryPayload"], "type"> & {
+            /** Format: int64 */
+            commandId?: number;
+            /** @enum {string} */
+            material: "SOIL" | "ROCK";
+            /** Format: int32 */
+            x?: number;
+            /** Format: int32 */
+            y?: number;
+            /** @enum {string} */
+            heading: "NORTH" | "EAST" | "SOUTH" | "WEST";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "SAMPLE";
+        };
         TelemetryPayload: {
             type: string;
         };
@@ -918,14 +1097,14 @@ export interface components {
             /** Format: uuid */
             packetId?: string;
             /** @enum {string} */
-            type?: "COMMAND_STATUS" | "ROVER_STATE" | "EVENT" | "PHOTO";
+            type?: "COMMAND_STATUS" | "ROVER_STATE" | "EVENT" | "PHOTO" | "SAMPLE";
             /** Format: int64 */
             commandId?: number;
             /** Format: date-time */
             roverTime?: string;
             /** Format: date-time */
             receivedAt?: string;
-            payload?: components["schemas"]["CommandStatus"] | components["schemas"]["Event"] | components["schemas"]["Photo"] | components["schemas"]["RoverState"];
+            payload?: components["schemas"]["CommandStatus"] | components["schemas"]["Event"] | components["schemas"]["Photo"] | components["schemas"]["RoverState"] | components["schemas"]["Sample"];
         };
         PagedModelPhotoResponse: {
             content?: components["schemas"]["PhotoResponse"][];
@@ -980,6 +1159,8 @@ export interface components {
         LinkStatus: {
             /** Format: int64 */
             oneWayDelaySeconds?: number;
+            /** Format: int64 */
+            queueHoldSeconds?: number;
             window?: components["schemas"]["WindowStatus"];
             conjunction?: components["schemas"]["ConjunctionResponse"];
             uplinkOpen?: boolean;
@@ -995,6 +1176,21 @@ export interface components {
             roles?: string[];
             /** Format: date-time */
             tokenExpiresAt?: string;
+        };
+        AuditEntryResponse: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: date-time */
+            occurredAt?: string;
+            actor?: string;
+            /** @enum {string} */
+            action?: "COMMAND_SUBMITTED" | "COMMAND_CANCELLED" | "COMMAND_APPROVED" | "COMMAND_REJECTED" | "MISSION_SUBMITTED" | "MISSION_CANCELLED" | "CONJUNCTION_DECLARED" | "CONJUNCTION_ENDED" | "WEBHOOK_REGISTERED" | "WEBHOOK_DELETED";
+            target?: string;
+            detail?: string;
+        };
+        PagedModelAuditEntryResponse: {
+            content?: components["schemas"]["AuditEntryResponse"][];
+            page?: components["schemas"]["PageMetadata"];
         };
     };
     responses: never;
@@ -1113,6 +1309,58 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    route: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roverId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["RouteResponse"];
+                };
+            };
+        };
+    };
+    preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roverId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["PlanPreviewResponse"];
+                };
             };
         };
     };
@@ -1493,6 +1741,26 @@ export interface operations {
             };
         };
     };
+    specs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["SpecsResponse"];
+                };
+            };
+        };
+    };
     site: {
         parameters: {
             query?: never;
@@ -1585,7 +1853,7 @@ export interface operations {
     history: {
         parameters: {
             query?: {
-                type?: "COMMAND_STATUS" | "ROVER_STATE" | "EVENT" | "PHOTO";
+                type?: "COMMAND_STATUS" | "ROVER_STATE" | "EVENT" | "PHOTO" | "SAMPLE";
                 /** @description Inclusive, ISO-8601 instant (Mars time) */
                 from?: string;
                 /** @description Exclusive, ISO-8601 instant (Mars time) */
@@ -1768,6 +2036,35 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["MeResponse"];
+                };
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query?: {
+                actor?: string;
+                action?: "COMMAND_SUBMITTED" | "COMMAND_CANCELLED" | "COMMAND_APPROVED" | "COMMAND_REJECTED" | "MISSION_SUBMITTED" | "MISSION_CANCELLED" | "CONJUNCTION_DECLARED" | "CONJUNCTION_ENDED" | "WEBHOOK_REGISTERED" | "WEBHOOK_DELETED";
+                /** @description Inclusive, ISO-8601 instant */
+                from?: string;
+                /** @description Exclusive, ISO-8601 instant */
+                to?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["PagedModelAuditEntryResponse"];
                 };
             };
         };

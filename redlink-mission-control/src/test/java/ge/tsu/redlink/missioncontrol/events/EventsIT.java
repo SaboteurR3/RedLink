@@ -238,6 +238,31 @@ class EventsIT {
 
     // --- helpers -------------------------------------------------------------------------------
 
+    @Test
+    void anEventCommittedByAnotherInstanceReachesThisInstancesStreams() throws Exception {
+        MockHttpServletResponse stream = open();
+        awaitEvents(stream, 1);
+
+        // Another mission-control instance records an event: only the row and the NOTIFY reach this
+        // one (no in-memory event here).
+        long id = jdbc.sql("""
+                        INSERT INTO rover_events (rover_id, type, data, created_at)
+                        VALUES (1, 'LINK', '{"from":"instance-b"}', now()) RETURNING id""")
+                .query(Long.class).single();
+        jdbc.sql("SELECT pg_notify('rover_events', ?)").param("1:" + id).query().listOfRows();
+
+        List<Sse> events = awaitEvents(stream, 2);
+        assertThat(events.get(1).id()).isEqualTo(String.valueOf(id));
+        assertThat(events.get(1).name()).isEqualTo("link");
+        assertThat(events.get(1).data()).isEqualTo("{\"from\":\"instance-b\"}");
+
+        // A local change is still streamed once, not twice (in-memory and NOTIFY paths both run).
+        submit("{\"type\":\"MOVE\",\"distanceMeters\":1}");
+        awaitEvents(stream, 3);
+        Thread.sleep(700); // longer than the listener's poll, so a duplicate would have arrived
+        assertThat(parse(stream.getContentAsString())).hasSize(3);
+    }
+
     private String ticket() throws Exception {
         String body = mvc.perform(post(EVENTS + "/tickets").header(HttpHeaders.AUTHORIZATION, viewer))
                 .andReturn().getResponse().getContentAsString();

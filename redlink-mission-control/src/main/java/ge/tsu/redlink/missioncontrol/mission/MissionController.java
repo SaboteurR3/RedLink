@@ -2,6 +2,7 @@ package ge.tsu.redlink.missioncontrol.mission;
 
 import ge.tsu.redlink.missioncontrol.command.CommandProperties;
 import ge.tsu.redlink.missioncontrol.idempotency.IdempotencyService;
+import ge.tsu.redlink.missioncontrol.ratelimit.SubmissionRateLimiter;
 import ge.tsu.redlink.missioncontrol.idempotency.IdempotencyService.Outcome;
 import ge.tsu.redlink.missioncontrol.web.Tagged;
 import io.swagger.v3.oas.annotations.Operation;
@@ -48,6 +49,7 @@ public class MissionController {
 
     private final MissionService missions;
     private final CommandProperties commandProperties;
+    private final SubmissionRateLimiter rateLimiter;
 
     /**
      * {@code 202 Accepted}: the steps are queued, not done. Stored as text, so a replay is
@@ -70,6 +72,7 @@ public class MissionController {
                                   @Valid @RequestBody MissionRequest request,
                                   @AuthenticationPrincipal Jwt jwt) {
         IdempotencyService.validateKey(idempotencyKey);
+        rateLimiter.acquire(jwt.getSubject());
         Outcome outcome = missions.submit(roverId, request, jwt.getSubject(), idempotencyKey);
 
         ResponseEntity.BodyBuilder response = ResponseEntity.status(outcome.response().status())
@@ -80,6 +83,30 @@ public class MissionController {
             response.header(IDEMPOTENT_REPLAYED, "true");
         }
         return response.body(outcome.response().body());
+    }
+
+    /**
+     * A dry run: changes nothing, so it is safe to call as often as the user edits the plan. POST only
+     * because the plan travels in the body; the answer is 200 (nothing was created) and never cached.
+     */
+    @Operation(summary = "Preview a command or plan (dry run)",
+            description = "Simulates the steps from Earth's last known state on the terrain with the rover's specs: "
+                    + "the path cell by cell, the end state and the first step that would fail. Sends nothing.")
+    @PostMapping(path = "/rovers/{roverId}/plan-previews", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasRole('VIEWER')")
+    ResponseEntity<PlanPreviewDtos.PlanPreviewResponse> preview(@PathVariable long roverId,
+                                                                @Valid @RequestBody PlanPreviewDtos.PlanPreviewRequest request) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(missions.preview(roverId, request.steps()));
+    }
+
+    @Operation(summary = "Plan a drive to a cell",
+            description = "The cheapest route around rocks and steep slopes from the last known position, as ROTATE/MOVE "
+                    + "commands with their preview. Sends nothing; submit the steps as a mission. 422 no-route if unreachable.")
+    @PostMapping(path = "/rovers/{roverId}/routes", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasRole('VIEWER')")
+    ResponseEntity<PlanPreviewDtos.RouteResponse> route(@PathVariable long roverId,
+                                                        @Valid @RequestBody PlanPreviewDtos.RouteRequest request) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(missions.route(roverId, request.x(), request.y()));
     }
 
     @Operation(summary = "Get a mission", description = "Status and progress are derived from the steps. "

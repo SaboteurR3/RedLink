@@ -394,6 +394,38 @@ class CommandsIT {
                 .content(body));
     }
 
+    @Test
+    void theCallersW3cTraceIsContinuedAndKeptWithTheCommand() throws Exception {
+        String traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        String body = mvc.perform(post("/api/v1/rovers/1/commands").header(HttpHeaders.AUTHORIZATION, operator)
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .header("traceparent", "00-" + traceId + "-00f067aa0ba902b7-01")
+                        .contentType(MediaType.APPLICATION_JSON).content(MOVE_5))
+                .andExpect(status().isAccepted())
+                .andReturn().getResponse().getContentAsString();
+        long id = jsonMapper.readTree(body).get("id").asLong();
+
+        String stored = jdbc.sql("SELECT trace_parent FROM commands WHERE id = ?").param(id).query(String.class).single();
+        assertThat(stored).startsWith("00-" + traceId + "-");
+    }
+
+    @Test
+    void eachRoverHasItsOwnCommands() throws Exception {
+        submit(operator, UUID.randomUUID().toString(), MOVE_5).andExpect(status().isAccepted());
+        mvc.perform(post("/api/v1/rovers/2/commands").header(HttpHeaders.AUTHORIZATION, operator)
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content(MOVE_5))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$._links.rover.href").value("/api/v1/rovers/2"));
+
+        mvc.perform(get("/api/v1/rovers/1/commands").header(HttpHeaders.AUTHORIZATION, viewer))
+                .andExpect(jsonPath("$.page.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].roverId").value(1));
+        mvc.perform(get("/api/v1/rovers/2/commands").header(HttpHeaders.AUTHORIZATION, viewer))
+                .andExpect(jsonPath("$.page.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].roverId").value(2));
+    }
+
     private long commandCount() {
         return jdbc.sql("SELECT count(*) FROM commands").query(Long.class).single();
     }

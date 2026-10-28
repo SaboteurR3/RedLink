@@ -71,6 +71,16 @@ server:
     include-binding-errors: never
 
 management:
+  # Ticket 33: every request is traced and log lines carry the trace id; spans are exported only
+  # when MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT is set.
+  tracing:
+    sampling:
+      probability: 1.0
+  # No metrics push to localhost:4318 unless a collector is there (MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true).
+  otlp:
+    metrics:
+      export:
+        enabled: false
   endpoints:
     web:
       exposure:

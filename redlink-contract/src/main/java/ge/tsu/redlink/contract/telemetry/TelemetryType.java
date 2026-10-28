@@ -12,5 +12,7 @@ public enum TelemetryType {
     /** Something noteworthy happened that is not tied to a command (dust storm, fault). */
     EVENT,
     /** An image taken by TAKE_PHOTO, as a base64 PNG. */
-    PHOTO
+    PHOTO,
+    /** A sample taken by DRILL_SAMPLE: rock or soil, and where. */
+    SAMPLE
 }

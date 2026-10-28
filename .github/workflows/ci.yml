@@ -1,0 +1,101 @@
+# Every push and pull request: backend tests (with real PostgreSQL via Testcontainers), frontend
+# tests and build, and the whole stack in Docker Compose checked end to end through nginx.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (unit + integration tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      # Integration tests start a throwaway PostgreSQL with Testcontainers (Docker is available on the runner).
+      - run: ./mvnw -B -ntp verify
+      - name: Test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            */target/surefire-reports
+            */target/failsafe-reports
+          retention-days: 7
+
+  frontend:
+    name: Frontend (type check, tests, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+
+  stack:
+    name: Full stack (Docker Compose + end-to-end test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Secrets for this run only
+        run: |
+          {
+            echo "POSTGRES_USER=postgres"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "MISSION_CONTROL_DB_PASSWORD=$(openssl rand -hex 16)"
+            echo "ROVER_DB_PASSWORD=$(openssl rand -hex 16)"
+            echo "REDLINK_JWT_SECRET=$(openssl rand -base64 32)"
+            echo "REDLINK_LINK_SECRET=$(openssl rand -base64 32)"
+            echo "REDLINK_DEMO_USERS_PASSWORD=$(openssl rand -hex 12)"
+            # Random events off, so the end-to-end run is deterministic.
+            echo "REDLINK_ROVER_EVENTS_ENABLED=false"
+          } > .env
+      - run: docker compose up --build --detach
+      - name: Wait until the stack answers through nginx
+        run: |
+          for i in $(seq 1 90); do
+            ui=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8088/ || true)
+            api=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8088/api/v1/link || true)
+            if [ "$ui" = 200 ] && [ "$api" = 401 ]; then echo "up after ${i}×2 s"; exit 0; fi
+            sleep 2
+          done
+          echo "stack did not come up (ui=$ui api=$api)"; exit 1
+      - name: End-to-end test
+        run: |
+          export REDLINK_PASSWORD="$(grep '^REDLINK_DEMO_USERS_PASSWORD=' .env | cut -d= -f2)"
+          REDLINK_URL=http://localhost:8088 node scripts/e2e.mjs
+      - name: Container logs
+        if: always()
+        run: docker compose logs --no-color --tail=200
+      - if: always()
+        run: docker compose down --volumes

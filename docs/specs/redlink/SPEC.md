@@ -1,3 +1,5 @@
+| POST | `/rovers/{id}/plan-previews` | VIEWER; **dry run** of `{steps}`: `feasible`, `path` (every cell), `end`, `problem {step, reason, x, y}`, `marsSeconds`, `roverBusy`; nothing created → `200`, `no-store` |
+| POST | `/rovers/{id}/routes` | VIEWER; `{x, y}` → cheapest drive (A* over cell + heading: battery cost, rocks, slope ≤ 30°) as ROTATE/MOVE `steps` plus their preview; `422 no-route` |
 # RedLink — Architecture
 
 > An asynchronous REST platform for commanding a simulated Mars rover over a delayed deep-space
@@ -88,7 +90,7 @@ compile error in every `switch` that forgets it, on both sides of the link.
 | `MOVE` | `distanceMeters` (1–20) | 1 s per meter | obstacle, slope too steep, battery runs out |
 | `ROTATE` | `heading` NORTH/EAST/SOUTH/WEST | 2 s | — |
 | `TAKE_PHOTO` | `camera` NAVCAM/MASTCAM | 3 s | storage full |
-| `DRILL_SAMPLE` | — | 15 s | battery < 30 %, terrain is rock; **needs approval** |
+| `DRILL_SAMPLE` | — | 15 s | battery < 30 %; **needs approval**; cores the rock ahead if there is one, else the soil (ticket 37) |
 | `CHARGE` | `minutes` (1–120) | scaled | — (a dust storm cuts the gain to ¼) |
 | `REBOOT` | — | 5 s | — (only command accepted in SAFE_MODE) |
 
@@ -103,7 +105,8 @@ parameters.
   "commandId": 981,              // Earth-side id, echoed back in COMMAND_STATUS telemetry
   "sequenceNo": 17,              // per-rover order; rover executes in this order
   "command": { "type": "MOVE", "distanceMeters": 5 },
-  "sentAt": "2026-10-26T12:00:00Z"
+  "sentAt": "2026-10-26T12:00:00Z",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"  // optional (ticket 33)
 }
 ```
 
@@ -115,6 +118,7 @@ parameters.
 | `ROVER_STATE` | `x`, `y`, `heading`, `batteryPercent`, `temperatureCelsius`, `storageUsedPercent`, `mode` NOMINAL/SAFE_MODE |
 | `EVENT` | `code`, `severity` INFO/WARNING/CRITICAL, `message` |
 | `PHOTO` | `commandId`, `camera`, `x`, `y`, `heading`, `imageBase64` (PNG, ≤ 2 MB base64; Earth keeps the image in `photos`, telemetry history keeps the rest) |
+| `SAMPLE` | `commandId`, `material` ROCK/SOIL, `x`, `y`, `heading` (where the rover stood; a ROCK sample is from the next cell in `heading`; ticket 37) |
 
 ### TelemetryPacket (downlink, Mars → Earth)
 ```json
@@ -122,7 +126,8 @@ parameters.
   "packetId": "uuid",            // dedupe key on Earth
   "roverId": 1,
   "roverTime": "2026-10-26T12:00:10Z",   // when it happened on Mars
-  "payload": { "type": "COMMAND_STATUS", "commandId": 981, "status": "COMPLETED", "progressPercent": 100 }
+  "payload": { "type": "COMMAND_STATUS", "commandId": 981, "status": "COMPLETED", "progressPercent": 100 },
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-…-01"  // optional: the command's trace
 }
 ```
 
@@ -265,6 +270,9 @@ PENDING_APPROVAL ──approve──► QUEUED ──dispatcher──► TRANSMI
 - **Photos:** `PhotoRenderer` draws a first-person voxel-space view with Java2D from the terrain
   (1.8 m mast; NAVCAM 90° grayscale, MASTCAM 40° colour; 320×240), deterministic, no fonts. Sent
   as a `PHOTO` telemetry packet (base64 PNG) in the TAKE_PHOTO step's transaction, before `COMPLETED`.
+- **Samples (ticket 37):** DRILL_SAMPLE cores the rock in the cell the rover faces if there is one,
+  otherwise the soil in front of it (`FlightRules.sampleMaterial`). Sent as a `SAMPLE` telemetry
+  packet in the drill step's transaction, before `COMPLETED`. Rocks stay obstacles.
 - **Random events (ticket 19, `redlink.rover.events`, all dice through a `Dice` bean):** dust storms
   (weather check every `weather-interval`; `rover_state.dust_storm_until`; EVENT `DUST_STORM_STARTED`
   WARNING / `DUST_STORM_ENDED` INFO; charging at `RoverSpecs.DUST_STORM_CHARGE_FACTOR`), stuck wheel
@@ -287,6 +295,10 @@ PENDING_APPROVAL ──approve──► QUEUED ──dispatcher──► TRANSMI
   with value noise, 3–5 craters with raised rims (steep walls are the hazards), sand patches and
   rocks (denser on crater rims, placed by hashing (seed, x, y)), plus a flat, rock-free landing zone.
   A test fails if the committed files and the generator drift apart.
+- Second site `gale-sim` (ticket 32): 64 × 64 m, 0–5 m, start (20, 40), seed 2012, for rover 2
+  (`Curiosity-sim`). Each rover lives on its own site; rovers are seeded on both sides with the
+  same id (mission-control V13, rover-sim V5). Regenerate with
+  `TerrainGenerator <site id> <output folder>`.
 - Later the site can be replaced with real NASA elevation data (e.g. a HiRISE DTM of Jezero crater
   converted to the same files); nothing else changes.
 - rover-sim uses it for collision and slope checks; mission-control serves it to the frontend
@@ -319,7 +331,7 @@ All under `/api/v1`. JSON, errors as **RFC 9457 Problem Details**, docs via Open
 
 API documentation: `/v3/api-docs` (OpenAPI 3.1) and `/swagger-ui.html`, public, bearer scheme.
 | POST | `/rovers/{id}/events/tickets` | VIEWER; `201 {ticket, expiresAt, streamUrl}`, `no-store`; single-use, 30 s, bound to the rover (EventSource cannot send headers) |
-| GET | `/rovers/{id}/events` | VIEWER (`?ticket=` or bearer); **SSE**: `rover` (snapshot first, then changes), `command`, `uplink` (`arrivesAt` for the beam animation), `rover-event`, `photo` (metadata), `reset`; `id:` per event, resume with `Last-Event-ID` / `?lastEventId=`; events stored with the change, pushed after commit; heartbeat 15 s; 503 when full |
+| GET | `/rovers/{id}/events` | VIEWER (`?ticket=` or bearer); **SSE**: `rover` (snapshot first, then changes), `command`, `uplink` (`arrivesAt` for the beam animation), `rover-event`, `photo` (metadata), `sample` (drill sample), `reset`; `id:` per event, resume with `Last-Event-ID` / `?lastEventId=`; events stored with the change, pushed after commit, to streams on **every instance** (PostgreSQL `NOTIFY rover_events` with the ids, each instance LISTENs and catches its streams up; ticket 34); heartbeat 15 s; 503 when full |
 | GET | `/rovers/{id}/telemetry?type=&from=&to=&page=&size=` | VIEWER; history newest first by Mars time; `[from, to)`; inverted range → 400 |
 
 ### Commands
@@ -334,12 +346,17 @@ API documentation: `/v3/api-docs` (OpenAPI 3.1) and `/swagger-ui.html`, public, 
 ### Missions (batch)
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/rovers/{id}/missions` | OPERATOR; `{name, steps[1..50]}`; **`Idempotency-Key` required** → `202`, `Location`, `Retry-After`; whole plan simulated first from the last known state on the terrain with the contract's `RoverSpecs` (`MissionPlanner`): first impossible step → `422 mission-plan-infeasible` (`step`, `errors`), nothing created; unfinished commands → `409 rover-busy` (plan from a known state); body has the `forecast` end state |
+| POST | `/rovers/{id}/missions` | OPERATOR; `{name, steps[1..50]}`; **`Idempotency-Key` required** → `202`, `Location`, `Retry-After`; whole plan simulated first from the last known state on the terrain with the contract's `RoverSpecs` (`MissionPlanner`): first impossible step → `422 mission-plan-infeasible` (`step`, `errors`), nothing created; unfinished commands → `409 rover-busy` (plan from a known state) with `blockingCommands` [{id, type, status, cancellable}]; body has the `forecast` end state |
 | GET | `/rovers/{id}/missions?page=&size=` | VIEWER; newest first, with steps |
 | GET | `/missions/{id}` | VIEWER; `status` derived from the steps (FAILED > CANCELLED > COMPLETED > IN_PROGRESS > QUEUED, never stored), `progress`, `forecast`, `steps`, `_links.cancel` while a step is on Earth; ETag from the steps' versions, 304 |
 | POST | `/missions/{id}/cancel` | OPERATOR; withdraws every step still on Earth; 200 (again 200); `409 mission-not-cancellable` when all have left Earth |
 
 A step that ends FAILED, REFUSED_BY_ROVER, REJECTED or CANCELLED withdraws the later steps still on Earth (CANCELLED, `MISSION_ABORTED`), in the same transaction (`CommandEnded` Spring event). Commands carry `mission {id, step}` and `_links.mission`.
+
+### Specs
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/specs` | VIEWER; the rover's spec sheet (`RoverSpecs`: costs, limits, step durations) so clients estimate with the rover's own numbers; `max-age=3600, private`, ETag, 304 |
 
 ### Photos
 | Method | Path | Notes |
@@ -362,6 +379,23 @@ the dispatcher claims with a lease, retries 2 s … 5 min up to 8 attempts, then
 `410 Gone` deactivates the webhook. **SSRF protection**: https only, no credentials, every resolved
 address must be public (no loopback, private, link-local/metadata, CGNAT, IPv6 ULA, …), checked at
 registration and again before each delivery; no redirects; 3 s / 5 s timeouts.
+
+### Audit
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/audit` | FLIGHT_DIRECTOR; who changed what and when, newest first; filters `actor`, `action`, `[from, to)`; paged |
+
+Recorded in the transaction of the change itself (so only committed changes, never replays):
+command submitted/cancelled/approved/rejected, mission submitted/cancelled, conjunction
+declared/ended, webhook registered/deleted (host only, never the URL's path or query).
+
+### Paging, rate limits
+- **Every paged list** (`commands`, `missions`, `photos`, `telemetry`, `rovers`, `deliveries`,
+  `audit`) sends an RFC 8288 `Link` header with `first`, `prev`, `next`, `last`: the request's own
+  path and query with only `page` changed (relative, like `_links`). CORS exposes it.
+- **Submissions** (`POST …/commands`, `POST …/missions`) share a token bucket per user: a burst of
+  30, refilled at 30 a minute (`redlink.rate-limit.submissions`). Beyond it: `429 rate-limited`
+  with `Retry-After` (seconds until one is allowed). In-memory per instance.
 
 ### Idempotency rules
 - Missing or malformed key (1–255 visible ASCII) → `400 invalid-idempotency-key`.
@@ -405,6 +439,8 @@ Flyway migrations in each service. `jsonb` for params/payloads.
 | `webhooks` | id, user_id, url, secret, events text[], active |
 | `webhook_deliveries` | id, webhook_id, event, payload jsonb, status, attempts, next_attempt_at, last_status_code |
 | `link_state` | single row: conjunction_active, changed_by, changed_at, version |
+| `audit_log` | id, occurred_at, actor, action, target (`command:42`, `webhook:<uuid>`, …), detail — append-only |
+| `login_failures` | username, client_ip (PK), window_start, failures — the login throttle, shared by all instances (ticket 34) |
 
 ### rover database
 | Table | Key columns |

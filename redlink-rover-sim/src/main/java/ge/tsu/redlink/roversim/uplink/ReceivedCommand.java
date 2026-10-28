@@ -84,6 +84,10 @@ public class ReceivedCommand {
     @Column(name = "next_step_at")
     private Instant nextStepAt;
 
+    /** Earth's trace context from the packet: executing and reporting continue that trace. */
+    @Column(name = "trace_parent", updatable = false)
+    private String traceParent;
+
     public void start(int totalSteps, Instant firstStepAt, Instant now) {
         requireStatus(CommandExecutionStatus.RECEIVED);
         this.status = CommandExecutionStatus.EXECUTING;

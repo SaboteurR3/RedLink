@@ -7,7 +7,17 @@ import { ago, useNow } from '../hooks/useNow';
  * The rover's photos, newest first. The PNG is the same resource as the metadata, asked for with
  * `Accept: image/png` (content negotiation), and loaded with the bearer token into a blob URL.
  */
-export function PhotoStrip({ api, photos }: { api: ApiClient; photos: Photo[] }) {
+export function PhotoStrip({
+  api,
+  photos,
+  onShowOnMap,
+}: {
+  api: ApiClient;
+  photos: Photo[];
+  /** Fly the 3D camera to where the photo was taken. */
+  onShowOnMap?: (photo: Photo) => void;
+}) {
+  const [viewing, setViewing] = useState(false);
   const now = useNow();
   const [images, setImages] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -55,7 +65,13 @@ export function PhotoStrip({ api, photos }: { api: ApiClient; photos: Photo[] })
         <>
           {shown && (
             <figure className="photo-large">
-              {images[shown.id] ? <img src={images[shown.id]} alt={`${shown.camera} at (${shown.x}, ${shown.y})`} /> : <div className="photo-placeholder" />}
+              {images[shown.id] ? (
+                <button className="photo-open" onClick={() => setViewing(true)} title="Open full size">
+                  <img src={images[shown.id]} alt={`${shown.camera} at (${shown.x}, ${shown.y})`} />
+                </button>
+              ) : (
+                <div className="photo-placeholder" />
+              )}
               <figcaption>
                 {shown.camera} · ({shown.x}, {shown.y}) facing {shown.heading} · {ago(shown.takenAt, now)} (Mars time)
               </figcaption>
@@ -74,6 +90,41 @@ export function PhotoStrip({ api, photos }: { api: ApiClient; photos: Photo[] })
             ))}
           </div>
         </>
+      )}
+      {viewing && shown && images[shown.id] && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setViewing(false)}>
+          <div className="modal panel photo-viewer" role="dialog" aria-label="Photo">
+            <div className="modal-head">
+              <h2>
+                {shown.camera} · ({shown.x}, {shown.y}) facing {shown.heading}
+              </h2>
+              <button className="secondary small" onClick={() => setViewing(false)}>
+                Close
+              </button>
+            </div>
+            <img className="photo-full" src={images[shown.id]} alt={`${shown.camera} at (${shown.x}, ${shown.y})`} />
+            <p className="muted small-text">
+              {shown.width}×{shown.height} px · {Math.round(shown.sizeBytes / 1024)} kB · taken {new Date(shown.takenAt).toLocaleString()} (Mars time) ·
+              command #{shown.commandId}
+            </p>
+            <div className="console-row">
+              <a className="button-link" href={images[shown.id]} download={`redlink-${shown.camera.toLowerCase()}-${shown.id}.png`}>
+                Download PNG
+              </a>
+              {onShowOnMap && (
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    onShowOnMap(shown);
+                    setViewing(false);
+                  }}
+                >
+                  Show on map
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

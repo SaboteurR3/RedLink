@@ -75,4 +75,17 @@ class CommandJsonTest {
                 + "\"sentAt\":\"2026-10-26T12:00:00Z\"}");
         assertThat(mapper.readValue(json, CommandPacket.class)).isEqualTo(packet);
     }
+
+    @Test
+    void traceContextTravelsInsideThePacketWhenThereIsOne() {
+        String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        CommandPacket packet = new CommandPacket(
+                UUID.fromString("7f3c1d2e-0000-4000-8000-0000000000e1"), 1, 981, 17,
+                new RoverCommand.Move(5), Instant.parse("2026-10-26T12:00:00Z"), traceparent);
+
+        String json = mapper.writeValueAsString(packet);
+
+        assertThat(json).endsWith("\"sentAt\":\"2026-10-26T12:00:00Z\",\"traceparent\":\"" + traceparent + "\"}");
+        assertThat(mapper.readValue(json, CommandPacket.class)).isEqualTo(packet);
+    }
 }

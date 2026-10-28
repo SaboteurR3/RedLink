@@ -1,6 +1,11 @@
 package ge.tsu.redlink.missioncontrol.mission;
 
 import ge.tsu.redlink.contract.command.RoverCommand;
+import ge.tsu.redlink.contract.rover.Heading;
+import ge.tsu.redlink.contract.rover.RoverSpecs;
+import ge.tsu.redlink.contract.terrain.Terrain;
+import ge.tsu.redlink.missioncontrol.audit.AuditAction;
+import ge.tsu.redlink.missioncontrol.audit.AuditLog;
 import ge.tsu.redlink.missioncontrol.command.Command;
 import ge.tsu.redlink.missioncontrol.command.CommandRepository;
 import ge.tsu.redlink.missioncontrol.command.CommandResponse;
@@ -17,6 +22,7 @@ import ge.tsu.redlink.missioncontrol.mission.MissionExceptions.RoverBusyExceptio
 import ge.tsu.redlink.missioncontrol.rover.Rover;
 import ge.tsu.redlink.missioncontrol.rover.RoverRepository;
 import ge.tsu.redlink.missioncontrol.site.SiteService;
+import ge.tsu.redlink.missioncontrol.tracing.LinkTracing;
 import ge.tsu.redlink.missioncontrol.web.ApiExceptions.NotFoundException;
 import ge.tsu.redlink.missioncontrol.web.ProblemTypes;
 import ge.tsu.redlink.missioncontrol.web.Tagged;
@@ -51,6 +57,8 @@ public class MissionService {
             CommandStatus.QUEUED, CommandStatus.TRANSMITTED, CommandStatus.RECEIVED, CommandStatus.EXECUTING);
 
     private final MissionRepository missions;
+    private final AuditLog audit;
+    private final LinkTracing tracing;
     private final CommandRepository commands;
     private final RoverRepository rovers;
     private final SiteService sites;
@@ -75,14 +83,15 @@ public class MissionService {
         return idempotency.execute(user, idempotencyKey, requestHash, () -> {
             // Serialises mission submissions per rover, so two plans cannot both pass the "idle" check.
             jdbc.sql("SELECT id FROM rovers WHERE id = ? FOR UPDATE").param(roverId).query(Long.class).single();
-            if (commands.existsByRoverIdAndStatusIn(roverId, UNFINISHED)) {
-                throw new RoverBusyException(roverId);
+            List<Command> unfinished = commands.findTop20ByRoverIdAndStatusInOrderByIdAsc(roverId, UNFINISHED);
+            if (!unfinished.isEmpty()) {
+                throw new RoverBusyException(roverId, unfinished.stream()
+                        .map(c -> new MissionExceptions.BlockingCommand(c.getId(), c.getType(), c.getStatus(),
+                                c.getStatus().isCancellable()))
+                        .toList());
             }
             Rover rover = findRover(roverId);
-            MissionPlanner.State start = new MissionPlanner.State(rover.getLastX(), rover.getLastY(),
-                    rover.getLastHeading(), rover.getLastBatteryPercent(), rover.getLastStorageUsedPercent(),
-                    rover.getLastMode());
-            MissionPlanner.Result result = MissionPlanner.plan(start, request.steps(),
+            MissionPlanner.Result result = MissionPlanner.plan(startOf(rover), request.steps(),
                     sites.get(rover.getSiteId()).terrain());
             if (result instanceof MissionPlanner.Result.Infeasible infeasible) {
                 throw new PlanInfeasibleException(infeasible.step() + 1, infeasible.command().type(), infeasible.reason());
@@ -93,20 +102,104 @@ public class MissionService {
             Mission mission = missions.saveAndFlush(new Mission(roverId, request.name().strip(), user, now,
                     jsonMapper.writeValueAsString(forecast)));
             List<Command> steps = new ArrayList<>();
+            String traceparent = tracing.currentTraceparent(); // every step continues the planning request's trace
             for (int i = 0; i < request.steps().size(); i++) {
                 RoverCommand step = request.steps().get(i);
                 steps.add(new Command(roverId, step.type(), jsonMapper.writeValueAsString(step), user, now,
-                        mission.getId(), i + 1));
+                        mission.getId(), i + 1).tracedAs(traceparent));
             }
             // Saved in order, so ids (and with them uplink order) follow the plan.
             steps = commands.saveAllAndFlush(steps);
             log.info("{} planned mission {} '{}' for rover {} ({} steps)", user, mission.getId(), mission.getName(),
                     roverId, steps.size());
+            audit.record(user, AuditAction.MISSION_SUBMITTED, "mission:" + mission.getId(),
+                    "'" + mission.getName() + "', " + steps.size() + " steps");
             MissionResponse response = toResponse(mission, steps);
             response.steps().forEach(step -> events.publish(roverId, EventType.COMMAND, step));
             return new StoredResponse(HttpStatus.ACCEPTED.value(), MissionResponse.selfPath(mission.getId()),
                     jsonMapper.writeValueAsString(response));
         });
+    }
+
+    /**
+     * Plays one command or a whole plan forward without sending anything: the path cell by cell,
+     * where it would end, and the first step that would fail. Same simulation as a mission's check.
+     */
+    @Transactional(readOnly = true)
+    public PlanPreviewDtos.PlanPreviewResponse preview(long roverId, List<RoverCommand> steps) {
+        Rover rover = findRover(roverId);
+        boolean busy = !commands.findTop20ByRoverIdAndStatusInOrderByIdAsc(roverId, UNFINISHED).isEmpty();
+        MissionPlanner.Simulation simulation = MissionPlanner.simulate(startOf(rover), steps,
+                sites.get(rover.getSiteId()).terrain());
+
+        List<PlanPreviewDtos.PathPoint> path = simulation.path().stream()
+                .map(w -> new PlanPreviewDtos.PathPoint(w.step(), w.state().x(), w.state().y(), w.state().heading(),
+                        w.state().battery(), w.state().storage()))
+                .toList();
+        MissionPlanner.State end = simulation.path().get(simulation.path().size() - 1).state();
+        PlanPreviewDtos.PlanProblem problem = null;
+        int done = steps.size();
+        if (simulation.result() instanceof MissionPlanner.Result.Infeasible infeasible) {
+            problem = new PlanPreviewDtos.PlanProblem(infeasible.step() + 1, infeasible.reason(),
+                    simulation.failedX(), simulation.failedY());
+            done = infeasible.step();
+        }
+
+        // Working time of the steps that can be done; turns are counted from the path's headings.
+        double seconds = 0;
+        int chargeMinutes = 0;
+        MissionPlanner.State before = startOf(rover);
+        for (int i = 0; i < done; i++) {
+            final int index = i;
+            MissionPlanner.State after = simulation.path().stream().filter(w -> w.step() == index)
+                    .reduce((first, second) -> second).map(MissionPlanner.Waypoint::state).orElse(before);
+            RoverCommand step = steps.get(i);
+            switch (step.type()) {
+                case MOVE -> seconds += ((RoverCommand.Move) step).distanceMeters() * RoverSpecs.MOVE_STEP.toMillis() / 1000.0;
+                case ROTATE -> seconds += quarterTurns(before.heading(), after.heading()) * RoverSpecs.ROTATE_STEP.toMillis() / 1000.0;
+                case TAKE_PHOTO -> seconds += RoverSpecs.PHOTO_TIME.toMillis() / 1000.0;
+                case DRILL_SAMPLE -> seconds += RoverSpecs.DRILL_TIME.toMillis() / 1000.0;
+                case CHARGE -> chargeMinutes += ((RoverCommand.Charge) step).minutes();
+                case REBOOT -> seconds += RoverSpecs.REBOOT_TIME.toMillis() / 1000.0;
+            }
+            before = after;
+        }
+        return new PlanPreviewDtos.PlanPreviewResponse(problem == null, path, MissionResponse.Forecast.of(end), problem,
+                seconds, chargeMinutes, busy);
+    }
+
+    /**
+     * The cheapest drive from the last known position to a cell, as commands plus their preview.
+     *
+     * @throws MissionExceptions.NoRouteException if the cell cannot be reached
+     */
+    @Transactional(readOnly = true)
+    public PlanPreviewDtos.RouteResponse route(long roverId, int toX, int toY) {
+        Rover rover = findRover(roverId);
+        Terrain terrain = sites.get(rover.getSiteId()).terrain();
+        if (rover.getLastX() == toX && rover.getLastY() == toY) {
+            throw new MissionExceptions.NoRouteException("The rover is already at (" + toX + "," + toY + ")");
+        }
+        List<RoverCommand> steps = RoutePlanner.route(terrain, rover.getLastX(), rover.getLastY(), rover.getLastHeading(), toX, toY)
+                .orElseThrow(() -> new MissionExceptions.NoRouteException(!terrain.contains(toX, toY)
+                        ? "(" + toX + "," + toY + ") is outside the map"
+                        : terrain.isBlocked(toX, toY) ? "(" + toX + "," + toY + ") is a rock"
+                        : "No drivable way to (" + toX + "," + toY + ") around rocks and steep slopes"));
+        if (steps.size() > MissionRequest.MAX_STEPS) {
+            throw new MissionExceptions.NoRouteException("The route needs " + steps.size() + " commands; a mission has at most "
+                    + MissionRequest.MAX_STEPS + ". Pick a nearer cell.");
+        }
+        return new PlanPreviewDtos.RouteResponse(steps, preview(roverId, steps));
+    }
+
+    private static int quarterTurns(Heading from, Heading to) {
+        int clockwise = Math.floorMod(to.ordinal() - from.ordinal(), 4);
+        return clockwise == 3 ? 1 : clockwise;
+    }
+
+    private static MissionPlanner.State startOf(Rover rover) {
+        return new MissionPlanner.State(rover.getLastX(), rover.getLastY(), rover.getLastHeading(),
+                rover.getLastBatteryPercent(), rover.getLastStorageUsedPercent(), rover.getLastMode());
     }
 
     @Transactional(readOnly = true)
@@ -147,6 +240,7 @@ public class MissionService {
         commands.flush(); // version checks now: a concurrent transmission makes this fail with 412, not later
         onEarth.forEach(step -> events.publish(mission.getRoverId(), EventType.COMMAND, CommandResponse.of(step, jsonMapper)));
         log.info("{} cancelled mission {} ({} steps withdrawn)", user, missionId, onEarth.size());
+        audit.record(user, AuditAction.MISSION_CANCELLED, "mission:" + missionId, onEarth.size() + " steps withdrawn");
         return tagged(mission, steps);
     }
 

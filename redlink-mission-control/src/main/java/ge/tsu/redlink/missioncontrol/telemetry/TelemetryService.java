@@ -11,6 +11,7 @@ import ge.tsu.redlink.missioncontrol.command.CommandStatus;
 import ge.tsu.redlink.missioncontrol.events.EventType;
 import ge.tsu.redlink.missioncontrol.events.RoverEventMessage;
 import ge.tsu.redlink.missioncontrol.events.RoverEventPublisher;
+import ge.tsu.redlink.missioncontrol.events.SampleMessage;
 import ge.tsu.redlink.missioncontrol.photo.PhotoResponse;
 import ge.tsu.redlink.missioncontrol.photo.PhotoService;
 import ge.tsu.redlink.missioncontrol.rover.Rover;
@@ -74,7 +75,8 @@ public class TelemetryService {
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         TelemetryPayload payload = packet.payload();
         Long commandId = payload instanceof TelemetryPayload.CommandStatus status ? Long.valueOf(status.commandId())
-                : payload instanceof TelemetryPayload.Photo photo ? Long.valueOf(photo.commandId()) : null;
+                : payload instanceof TelemetryPayload.Photo photo ? Long.valueOf(photo.commandId())
+                : payload instanceof TelemetryPayload.Sample sample ? Long.valueOf(sample.commandId()) : null;
         // The image goes to the photos table; telemetry keeps only what the photo was of.
         TelemetryPayload stored = payload instanceof TelemetryPayload.Photo photo ? photo.withoutImage() : payload;
 
@@ -121,6 +123,13 @@ public class TelemetryService {
                         packet.roverTime(), now);
                 log.info("Rover {} sent photo {} ({} bytes)", rover.getId(), photo.id(), photo.sizeBytes());
                 events.publish(rover.getId(), EventType.PHOTO, photo);
+            }
+            case SAMPLE -> {
+                TelemetryPayload.Sample sample = (TelemetryPayload.Sample) payload;
+                log.info("Rover {} took a {} sample at ({},{}) facing {}", rover.getId(), sample.material(), sample.x(),
+                        sample.y(), sample.heading());
+                events.publish(rover.getId(), EventType.SAMPLE, new SampleMessage(sample.commandId(), sample.material(),
+                        sample.x(), sample.y(), sample.heading(), packet.roverTime()));
             }
         }
         return new DownlinkReceipt(packet.packetId(), false);

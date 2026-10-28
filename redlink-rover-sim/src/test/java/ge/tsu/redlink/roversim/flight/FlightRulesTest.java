@@ -4,6 +4,7 @@ import ge.tsu.redlink.contract.command.RoverCommand;
 import ge.tsu.redlink.contract.rover.Camera;
 import ge.tsu.redlink.contract.rover.Heading;
 import ge.tsu.redlink.contract.rover.RoverMode;
+import ge.tsu.redlink.contract.telemetry.SampleMaterial;
 import ge.tsu.redlink.contract.terrain.SiteInfo;
 import ge.tsu.redlink.contract.terrain.SurfaceType;
 import ge.tsu.redlink.contract.terrain.Terrain;
@@ -45,6 +46,17 @@ class FlightRulesTest {
 
     private static StepOutcome step(RoverCommand command, RoverSnapshot rover) {
         return FlightRules.step(command, rover, TERRAIN);
+    }
+
+    @ParameterizedTest(name = "at ({0},{1}) facing {2}: {3}")
+    @CsvSource({
+            "1, 1, NORTH, ROCK", // the rock at (1,0)
+            "2, 1, NORTH, SOIL", // ground ahead
+            "2, 1, EAST, SOIL", // sand ahead
+            "0, 0, WEST, SOIL", // the map edge ahead
+    })
+    void drillTakesTheRockAheadOtherwiseTheSoil(int x, int y, Heading heading, SampleMaterial expected) {
+        assertThat(FlightRules.sampleMaterial(rover(x, y, heading, 50, 0), TERRAIN)).isEqualTo(expected);
     }
 
     @Test

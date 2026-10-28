@@ -112,6 +112,7 @@ class LinkIT {
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache, private"))
                 .andExpect(jsonPath("$.oneWayDelaySeconds").value(10))
+                .andExpect(jsonPath("$.queueHoldSeconds").value(5))
                 .andExpect(jsonPath("$.window.enabled").value(true))
                 .andExpect(jsonPath("$.window.open").value(false))
                 .andExpect(jsonPath("$.window.nextChangeAt").value("2026-10-26T12:02:00Z"))

@@ -1,5 +1,7 @@
 package ge.tsu.redlink.missioncontrol.webhook;
 
+import ge.tsu.redlink.missioncontrol.audit.AuditAction;
+import ge.tsu.redlink.missioncontrol.audit.AuditLog;
 import ge.tsu.redlink.missioncontrol.web.ApiExceptions.InvalidRequestException;
 import ge.tsu.redlink.missioncontrol.web.ApiExceptions.NotFoundException;
 import ge.tsu.redlink.missioncontrol.web.ApiExceptions.UnprocessableException;
@@ -17,6 +19,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
 import java.security.SecureRandom;
 import java.sql.Timestamp;
 import java.time.Clock;
@@ -44,6 +47,7 @@ public class WebhookService {
     private final WebhookProperties properties;
     private final JdbcClient jdbc;
     private final Clock clock;
+    private final AuditLog audit;
     private final SecureRandom random = new SecureRandom();
 
     /**
@@ -73,6 +77,9 @@ public class WebhookService {
         Webhook webhook = webhooks.save(new Webhook(owner, request.url(), newSecret(), events,
                 clock.instant().truncatedTo(ChronoUnit.MICROS)));
         log.info("{} registered webhook {} for {}", owner, webhook.getId(), webhook.getEvents());
+        // Only the host: the path or query of a webhook URL may carry the receiver's own token.
+        audit.record(owner, AuditAction.WEBHOOK_REGISTERED, "webhook:" + webhook.getId(),
+                webhook.getEvents() + " to " + URI.create(webhook.getUrl()).getHost());
         return CreatedWebhookResponse.of(webhook);
     }
 
@@ -91,6 +98,7 @@ public class WebhookService {
     public void delete(String owner, UUID id) {
         webhooks.delete(find(owner, id));
         log.info("{} deleted webhook {}", owner, id);
+        audit.record(owner, AuditAction.WEBHOOK_DELETED, "webhook:" + id, null);
     }
 
     /** Queues a test delivery. */

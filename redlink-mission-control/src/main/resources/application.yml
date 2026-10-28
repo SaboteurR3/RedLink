@@ -45,6 +45,11 @@ redlink:
   commands:
     # Retry-After on 202: when polling a new command is first worthwhile.
     retry-after: 5s
+  rate-limit:
+    # Per user, a token bucket: a burst of up to 30 commands or missions, then 30 a minute.
+    submissions:
+      capacity: 30
+      per: 1m
   idempotency:
     # How long an Idempotency-Key is remembered; afterwards it may be reused for a new request.
     retention: 24h
@@ -126,6 +131,18 @@ server:
     include-binding-errors: never
 
 management:
+  # Ticket 33: every request is traced (a demo system, not a busy one) and log lines carry the
+  # trace id. Spans are exported only when an OTLP endpoint is set, e.g.
+  # MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces (Jaeger).
+  tracing:
+    sampling:
+      probability: 1.0
+  # The OpenTelemetry starter would also push metrics to localhost:4318 every minute; off unless
+  # a collector is there (MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true).
+  otlp:
+    metrics:
+      export:
+        enabled: false
   endpoints:
     web:
       exposure:

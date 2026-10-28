@@ -1,5 +1,6 @@
 package ge.tsu.redlink.missioncontrol.uplink;
 
+import ge.tsu.redlink.missioncontrol.tracing.LinkTracing;
 import ge.tsu.redlink.missioncontrol.uplink.RoverLinkClient.Delivery;
 import ge.tsu.redlink.missioncontrol.uplink.UplinkClaims.ClaimedPacket;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ public class UplinkDispatcher {
     private final UplinkRejections rejections;
     private final UplinkProperties properties;
     private final Clock clock;
+    private final LinkTracing tracing;
 
     /**
      * One round: claim due packets, send each outside any transaction, record the result.
@@ -35,7 +37,8 @@ public class UplinkDispatcher {
         Instant now = now();
         List<ClaimedPacket> batch = claims.claimDue(now, now.plus(properties.lease()), properties.batchSize());
         for (ClaimedPacket packet : batch) {
-            Delivery delivery = rover.send(packet.json());
+            // A span in the command's own trace; the rover continues it from the header and the packet.
+            Delivery delivery = tracing.inSpan(packet.traceparent(), "uplink send", () -> rover.send(packet.json()));
             switch (delivery.outcome()) {
                 case DELIVERED -> claims.markSent(packet.packetId(), now());
                 case REJECTED -> {

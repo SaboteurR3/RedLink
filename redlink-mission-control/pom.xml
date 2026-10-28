@@ -38,6 +38,11 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
         <dependency>
+            <!-- Micrometer Tracing over OpenTelemetry: W3C traceparent across the link (ticket 33). -->
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-opentelemetry</artifactId>
+        </dependency>
+        <dependency>
             <!-- Spring Security + JWT validation; also brings Nimbus, used to issue our own tokens. -->
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
@@ -62,7 +67,7 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
+            <!-- Compile scope: RoverEventListener uses the driver's LISTEN/NOTIFY API (ticket 34). -->
         </dependency>
 
         <dependency>

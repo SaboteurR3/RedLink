@@ -4,6 +4,8 @@ import ge.tsu.redlink.contract.command.CommandType;
 import ge.tsu.redlink.contract.command.RoverCommand;
 import ge.tsu.redlink.contract.rover.RoverMode;
 import ge.tsu.redlink.contract.rover.RoverSpecs;
+import ge.tsu.redlink.missioncontrol.audit.AuditAction;
+import ge.tsu.redlink.missioncontrol.audit.AuditLog;
 import ge.tsu.redlink.missioncontrol.events.EventType;
 import ge.tsu.redlink.missioncontrol.events.RoverEventPublisher;
 import ge.tsu.redlink.missioncontrol.idempotency.IdempotencyService;
@@ -11,6 +13,7 @@ import ge.tsu.redlink.missioncontrol.idempotency.IdempotencyService.Outcome;
 import ge.tsu.redlink.missioncontrol.idempotency.IdempotencyService.StoredResponse;
 import ge.tsu.redlink.missioncontrol.rover.Rover;
 import ge.tsu.redlink.missioncontrol.rover.RoverRepository;
+import ge.tsu.redlink.missioncontrol.tracing.LinkTracing;
 import ge.tsu.redlink.missioncontrol.web.ApiExceptions.NotFoundException;
 import ge.tsu.redlink.missioncontrol.web.ApiExceptions.UnprocessableException;
 import ge.tsu.redlink.missioncontrol.web.EntityTags;
@@ -52,6 +55,8 @@ public class CommandService {
     private final JsonMapper jsonMapper;
     private final Clock clock;
     private final ApplicationEventPublisher ended;
+    private final AuditLog audit;
+    private final LinkTracing tracing;
 
     /**
      * Queues a command, at most once per (user, idempotency key). Order matters: the key is looked
@@ -68,8 +73,10 @@ public class CommandService {
 
         return idempotency.execute(user, idempotencyKey, requestHash, () -> {
             checkAgainstLastKnownState(rover, command);
-            Command saved = commands.saveAndFlush(new Command(roverId, command.type(), commandJson, user, now()));
+            Command saved = commands.saveAndFlush(new Command(roverId, command.type(), commandJson, user, now())
+                    .tracedAs(tracing.currentTraceparent()));
             log.info("{} queued command {} {} for rover {} ({})", user, saved.getId(), command.type(), roverId, saved.getStatus());
+            audit.record(user, AuditAction.COMMAND_SUBMITTED, target(saved), commandJson);
             CommandResponse response = CommandResponse.of(saved, command);
             events.publish(roverId, EventType.COMMAND, response);
             return new StoredResponse(HttpStatus.ACCEPTED.value(), CommandResponse.selfPath(saved.getId()),
@@ -102,6 +109,7 @@ public class CommandService {
         if (command.cancel(user, now())) {
             commands.saveAndFlush(command);
             log.info("{} cancelled command {}", user, commandId);
+            audit.record(user, AuditAction.COMMAND_CANCELLED, target(command), null);
             events.publish(command.getRoverId(), EventType.COMMAND, toResponse(command));
             ended.publishEvent(new CommandEnded(command));
         }
@@ -123,6 +131,7 @@ public class CommandService {
         if (command.approve(director, now())) {
             commands.saveAndFlush(command);
             log.info("{} approved command {} of {}", director, commandId, command.getCreatedBy());
+            audit.record(director, AuditAction.COMMAND_APPROVED, target(command), "sent by " + command.getCreatedBy());
             events.publish(command.getRoverId(), EventType.COMMAND, toResponse(command));
         }
         return tagged(command);
@@ -135,10 +144,15 @@ public class CommandService {
         if (command.reject(director, reason, now())) {
             commands.saveAndFlush(command);
             log.info("{} rejected command {} of {}", director, commandId, command.getCreatedBy());
+            audit.record(director, AuditAction.COMMAND_REJECTED, target(command), reason);
             events.publish(command.getRoverId(), EventType.COMMAND, toResponse(command));
             ended.publishEvent(new CommandEnded(command));
         }
         return tagged(command);
+    }
+
+    private static String target(Command command) {
+        return "command:" + command.getId();
     }
 
     private void checkAgainstLastKnownState(Rover rover, RoverCommand command) {

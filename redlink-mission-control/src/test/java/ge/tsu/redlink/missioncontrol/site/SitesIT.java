@@ -54,6 +54,15 @@ class SitesIT {
     }
 
     @Test
+    void theSecondRoversSiteIsServedToo() throws Exception {
+        mvc.perform(get("/api/v1/sites/gale-sim").header(HttpHeaders.AUTHORIZATION, viewer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Gale Crater (simulated)"))
+                .andExpect(jsonPath("$.start.x").value(20))
+                .andExpect(jsonPath("$.start.y").value(40));
+    }
+
+    @Test
     void heightmapIsAPngWithAContentETagAndCanBeCachedForADay() throws Exception {
         byte[] png = mvc.perform(get("/api/v1/sites/jezero-sim/heightmap").header(HttpHeaders.AUTHORIZATION, viewer))
                 .andExpect(status().isOk())

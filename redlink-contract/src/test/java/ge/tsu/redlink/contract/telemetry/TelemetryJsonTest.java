@@ -36,7 +36,10 @@ class TelemetryJsonTest {
                                 + "\"message\":\"Solar gain reduced\"}"),
                 Arguments.of(new TelemetryPayload.Photo(981, Camera.MASTCAM, 12, 7, Heading.EAST, "iVBORw0KGgoAAAA="),
                         "{\"type\":\"PHOTO\",\"commandId\":981,\"camera\":\"MASTCAM\",\"x\":12,\"y\":7,"
-                                + "\"heading\":\"EAST\",\"imageBase64\":\"iVBORw0KGgoAAAA=\"}"));
+                                + "\"heading\":\"EAST\",\"imageBase64\":\"iVBORw0KGgoAAAA=\"}"),
+                Arguments.of(new TelemetryPayload.Sample(982, SampleMaterial.ROCK, 12, 7, Heading.SOUTH),
+                        "{\"type\":\"SAMPLE\",\"commandId\":982,\"material\":\"ROCK\",\"x\":12,\"y\":7,"
+                                + "\"heading\":\"SOUTH\"}"));
     }
 
     @ParameterizedTest

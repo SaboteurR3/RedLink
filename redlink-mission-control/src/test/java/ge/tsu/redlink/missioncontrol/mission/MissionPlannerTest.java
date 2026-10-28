@@ -113,6 +113,26 @@ class MissionPlannerTest {
                 .isInstanceOf(Result.Feasible.class);
     }
 
+    @Test
+    void simulationKeepsEveryMeterAndEveryStep() {
+        MissionPlanner.Simulation simulation = MissionPlanner.simulate(START, List.of(
+                new RoverCommand.Move(2), new RoverCommand.TakePhoto(Camera.NAVCAM)), TERRAIN);
+
+        assertThat(simulation.path()).extracting(w -> w.step() + ":" + w.state().x() + "," + w.state().y())
+                .containsExactly("-1:2,4", "0:2,3", "0:2,2", "1:2,2");
+        assertThat(simulation.failedX()).isNull();
+    }
+
+    @Test
+    void simulationMarksTheCellWhereADriveFails() {
+        MissionPlanner.Simulation simulation = MissionPlanner.simulate(START, List.of(new RoverCommand.Move(5)), TERRAIN);
+
+        assertThat(simulation.result()).isInstanceOf(Result.Infeasible.class);
+        assertThat(simulation.path()).hasSize(1 + 3); // start + three meters before the rock
+        assertThat(simulation.failedX()).isEqualTo(2);
+        assertThat(simulation.failedY()).isZero();
+    }
+
     private static String reason(Result result) {
         assertThat(result).isInstanceOf(Result.Infeasible.class);
         return ((Result.Infeasible) result).reason();

@@ -1,32 +1,34 @@
 package ge.tsu.redlink.missioncontrol.auth;
 
 import ge.tsu.redlink.missioncontrol.security.SecurityProperties;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.ConcurrentHashMap;
+import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 
 /**
  * Slows down password guessing: after {@code maxFailures} failed logins for the same
  * (username, client IP) within {@code window}, further attempts are refused until the window ends.
  *
- * <p>Keyed on both, so an attacker cannot lock a real user out from a different machine.
- * In-memory: enough for one instance; several instances would need a shared store (e.g. Redis).
+ * <p>Keyed on both, so an attacker cannot lock a real user out from a different machine. Kept in
+ * PostgreSQL (ticket 34), so the limit holds across every instance: guessing against several
+ * instances behind a load balancer does not multiply the attempts.
  */
 @Component
 public class LoginThrottle {
 
-    /** Above this many tracked keys, expired entries are purged so memory stays bounded. */
-    private static final int PURGE_THRESHOLD = 10_000;
-
-    private final ConcurrentHashMap<String, Failures> failures = new ConcurrentHashMap<>();
+    private final JdbcClient jdbc;
     private final int maxFailures;
     private final Duration window;
     private final Clock clock;
 
-    public LoginThrottle(SecurityProperties properties, Clock clock) {
+    public LoginThrottle(JdbcClient jdbc, SecurityProperties properties, Clock clock) {
+        this.jdbc = jdbc;
         this.maxFailures = properties.loginThrottle().maxFailures();
         this.window = properties.loginThrottle().window();
         this.clock = clock;
@@ -36,37 +38,44 @@ public class LoginThrottle {
      * @throws LoginThrottledException if this key has used up its attempts
      */
     public void checkAllowed(String username, String clientIp) {
-        Instant now = clock.instant();
-        Failures current = failures.get(key(username, clientIp));
-        if (current != null && !current.expired(now, window) && current.count() >= maxFailures) {
-            Duration retryAfter = Duration.between(now, current.windowStart().plus(window));
-            throw new LoginThrottledException(retryAfter);
+        Instant now = now();
+        Optional<Instant> windowStart = jdbc.sql("""
+                        SELECT window_start FROM login_failures
+                        WHERE username = ? AND client_ip = ? AND window_start > ? AND failures >= ?""")
+                .params(username, clientIp, Timestamp.from(now.minus(window)), maxFailures)
+                .query((rs, row) -> rs.getTimestamp("window_start").toInstant())
+                .optional();
+        if (windowStart.isPresent()) {
+            throw new LoginThrottledException(Duration.between(now, windowStart.get().plus(window)));
         }
     }
 
+    /** One atomic upsert: concurrent failures on several instances are all counted. */
     public void recordFailure(String username, String clientIp) {
-        Instant now = clock.instant();
-        failures.compute(key(username, clientIp), (key, current) ->
-                current == null || current.expired(now, window)
-                        ? new Failures(now, 1)
-                        : new Failures(current.windowStart(), current.count() + 1));
-        if (failures.size() > PURGE_THRESHOLD) {
-            failures.values().removeIf(entry -> entry.expired(now, window));
-        }
+        Instant now = now();
+        Timestamp expiredBefore = Timestamp.from(now.minus(window));
+        jdbc.sql("""
+                        INSERT INTO login_failures (username, client_ip, window_start, failures)
+                        VALUES (:username, :clientIp, :now, 1)
+                        ON CONFLICT (username, client_ip) DO UPDATE SET
+                            failures = CASE WHEN login_failures.window_start <= :expiredBefore THEN 1
+                                            ELSE login_failures.failures + 1 END,
+                            window_start = CASE WHEN login_failures.window_start <= :expiredBefore THEN :now
+                                                ELSE login_failures.window_start END""")
+                .param("username", username)
+                .param("clientIp", clientIp)
+                .param("now", Timestamp.from(now))
+                .param("expiredBefore", expiredBefore)
+                .update();
+        // Old windows are useless; dropping them keeps the table as small as the attack.
+        jdbc.sql("DELETE FROM login_failures WHERE window_start <= ?").param(expiredBefore).update();
     }
 
     public void recordSuccess(String username, String clientIp) {
-        failures.remove(key(username, clientIp));
+        jdbc.sql("DELETE FROM login_failures WHERE username = ? AND client_ip = ?").params(username, clientIp).update();
     }
 
-    private static String key(String username, String clientIp) {
-        return username + '|' + clientIp;
-    }
-
-    private record Failures(Instant windowStart, int count) {
-
-        boolean expired(Instant now, Duration window) {
-            return !now.isBefore(windowStart.plus(window));
-        }
+    private Instant now() {
+        return clock.instant().truncatedTo(ChronoUnit.MICROS);
     }
 }

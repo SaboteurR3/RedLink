@@ -1,23 +1,33 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { BufferAttribute, BufferGeometry, DoubleSide, Euler, InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three';
-import { cellHeight, cellToWorld, rockCells, terrainArrays, type Grid } from './geometry';
+import { Euler, InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three';
+import { cellHeight, cellToWorld, rockCells, worldToCell, type Grid } from './geometry';
+import { meshGeometry, useGrainTexture, useRockGeometry } from './Landscape';
+import { hash2 as hash, siteArrays } from './relief';
 
-/** The landing site as a mesh: one vertex per cell centre, coloured like the 2D map. */
-export function Terrain({ grid }: { grid: Grid }) {
-  const geometry = useMemo(() => {
-    const { positions, colors, indices } = terrainArrays(grid);
-    const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(positions, 3));
-    g.setAttribute('color', new BufferAttribute(colors, 3));
-    g.setIndex(new BufferAttribute(indices, 1));
-    g.computeVertexNormals();
-    return g;
-  }, [grid]);
+/**
+ * The landing site as a mesh: several vertices per cell on the surface the rover drives on, coloured
+ * like the 2D map, with grain up close. `onCellClick` gets the clicked cell (a drag of the camera is
+ * not a click).
+ */
+export function Terrain({ grid, onCellClick }: { grid: Grid; onCellClick?: (x: number, y: number) => void }) {
+  const geometry = useMemo(() => meshGeometry(siteArrays(grid)), [grid]);
   useEffect(() => () => geometry.dispose(), [geometry]);
+  const grain = useGrainTexture();
 
   return (
-    <mesh geometry={geometry} receiveShadow>
-      <meshStandardMaterial vertexColors roughness={0.95} metalness={0} />
+    <mesh
+      geometry={geometry}
+      receiveShadow
+      onClick={(event) => {
+        if (!onCellClick || event.delta > 4) return; // the user was rotating the camera
+        event.stopPropagation();
+        const cell = worldToCell(grid, event.point.x, event.point.z);
+        if (cell) onCellClick(cell.x, cell.y);
+      }}
+      onPointerOver={() => onCellClick && (document.body.style.cursor = 'crosshair')}
+      onPointerOut={() => (document.body.style.cursor = '')}
+    >
+      <meshStandardMaterial vertexColors map={grain} bumpMap={grain} bumpScale={0.8} roughness={0.95} metalness={0} />
     </mesh>
   );
 }
@@ -26,6 +36,7 @@ export function Terrain({ grid }: { grid: Grid }) {
 export function Rocks({ grid }: { grid: Grid }) {
   const cells = useMemo(() => rockCells(grid), [grid]);
   const mesh = useRef<InstancedMesh>(null);
+  const geometry = useRockGeometry();
 
   useLayoutEffect(() => {
     const target = mesh.current;
@@ -37,7 +48,7 @@ export function Rocks({ grid }: { grid: Grid }) {
       const r2 = hash(y + 31, x + 7);
       const size = (0.38 + r1 * 0.22) * grid.metersPerCell;
       matrix.compose(
-        new Vector3(wx, cellHeight(grid, x, y) + size * 0.35, wz),
+        new Vector3(wx, cellHeight(grid, x, y) + size * 0.15, wz),
         new Quaternion().setFromEuler(new Euler(r2 * 0.6, r1 * Math.PI * 2, r1 * 0.4)),
         new Vector3(size, size * (0.6 + r2 * 0.3), size),
       );
@@ -47,33 +58,8 @@ export function Rocks({ grid }: { grid: Grid }) {
   }, [cells, grid]);
 
   return (
-    <instancedMesh key={cells.length} ref={mesh} args={[undefined, undefined, cells.length]} castShadow receiveShadow>
-      <dodecahedronGeometry args={[1, 0]} />
+    <instancedMesh key={cells.length} ref={mesh} args={[geometry, undefined, cells.length]} castShadow receiveShadow>
       <meshStandardMaterial color="#3d2d26" roughness={1} flatShading />
     </instancedMesh>
   );
-}
-
-/** The crater floor beyond the map and the wall rising around it, so the site has a horizon. */
-export function CraterRim({ grid }: { grid: Grid }) {
-  const radius = (Math.max(grid.width, grid.height) * grid.metersPerCell) / 2;
-  return (
-    <group>
-      <mesh rotation-x={-Math.PI / 2} position-y={-0.05} receiveShadow>
-        <ringGeometry args={[radius * 0.98, radius * 3, 64]} />
-        <meshStandardMaterial color="#7a3f24" roughness={1} />
-      </mesh>
-      <mesh position-y={6}>
-        <cylinderGeometry args={[radius * 3.4, radius * 3, 14, 64, 1, true]} />
-        <meshStandardMaterial color="#8a4a2c" roughness={1} side={DoubleSide} />
-      </mesh>
-    </group>
-  );
-}
-
-/** Deterministic value in [0, 1) per cell. */
-function hash(x: number, y: number): number {
-  let h = Math.imul(x, 374761393) + Math.imul(y, 668265263);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) & 0xffff) / 65536;
 }

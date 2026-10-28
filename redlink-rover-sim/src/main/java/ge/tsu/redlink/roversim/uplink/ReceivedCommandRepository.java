@@ -34,9 +34,10 @@ public interface ReceivedCommandRepository extends JpaRepository<ReceivedCommand
     @Modifying
     @Query(value = """
             INSERT INTO received_commands
-                (packet_id, rover_id, command_id, sequence_no, type, command, status, sent_at, received_at)
+                (packet_id, rover_id, command_id, sequence_no, type, command, status, sent_at, received_at, trace_parent)
             VALUES
-                (:packetId, :roverId, :commandId, :sequenceNo, :type, CAST(:command AS jsonb), 'RECEIVED', :sentAt, :receivedAt)
+                (:packetId, :roverId, :commandId, :sequenceNo, :type, CAST(:command AS jsonb), 'RECEIVED', :sentAt, :receivedAt,
+                 :traceParent)
             ON CONFLICT DO NOTHING
             """, nativeQuery = true)
     int insertIfAbsent(@Param("packetId") UUID packetId,
@@ -46,5 +47,6 @@ public interface ReceivedCommandRepository extends JpaRepository<ReceivedCommand
                        @Param("type") String type,
                        @Param("command") String commandJson,
                        @Param("sentAt") Instant sentAt,
-                       @Param("receivedAt") Instant receivedAt);
+                       @Param("receivedAt") Instant receivedAt,
+                       @Param("traceParent") String traceParent);
 }

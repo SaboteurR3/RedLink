@@ -6,6 +6,7 @@ import ge.tsu.redlink.contract.rover.Heading;
 import ge.tsu.redlink.contract.rover.RoverMode;
 import ge.tsu.redlink.contract.telemetry.CommandExecutionStatus;
 import ge.tsu.redlink.contract.telemetry.EventSeverity;
+import ge.tsu.redlink.contract.telemetry.SampleMaterial;
 import ge.tsu.redlink.contract.telemetry.TelemetryPacket;
 import ge.tsu.redlink.contract.telemetry.TelemetryPayload;
 import ge.tsu.redlink.missioncontrol.TestTokens;
@@ -224,6 +225,28 @@ class TelemetryIT {
                         .header(HttpHeaders.AUTHORIZATION, viewer))
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].type").value("ROVER_STATE"));
+    }
+
+    @Test
+    void drillSampleIsStoredListedByTypeAndStreamed() throws Exception {
+        long eventsBefore = jdbc.sql("SELECT count(*) FROM rover_events WHERE type = 'SAMPLE'").query(Long.class).single();
+
+        send(new TelemetryPayload.Sample(commandId, SampleMaterial.ROCK, 32, 31, Heading.NORTH), MARS_T)
+                .andExpect(status().isAccepted());
+
+        mvc.perform(get("/api/v1/rovers/1/telemetry?type=SAMPLE").header(HttpHeaders.AUTHORIZATION,
+                        TestTokens.bearer(jwtEncoder, "VIEWER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].commandId").value(commandId))
+                .andExpect(jsonPath("$.content[0].payload.material").value("ROCK"))
+                .andExpect(jsonPath("$.content[0].payload.heading").value("NORTH"));
+        String streamed = jdbc.sql("SELECT data FROM rover_events WHERE type = 'SAMPLE' ORDER BY id DESC LIMIT 1")
+                .query(String.class).single();
+        assertThat(jdbc.sql("SELECT count(*) FROM rover_events WHERE type = 'SAMPLE'").query(Long.class).single())
+                .isEqualTo(eventsBefore + 1);
+        assertThat(streamed).contains("\"material\":\"ROCK\"").contains("\"commandId\":" + commandId)
+                .contains("\"roverTime\":\"2026-10-26T12:00:10Z\"");
     }
 
     @Test

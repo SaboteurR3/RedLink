@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -23,6 +24,13 @@ public final class TerrainGenerator {
             "jezero-sim", "Jezero Crater (simulated)", 64, 64, 1.0, 0.0, 4.0, 32, 32);
     /** 2021: the year Perseverance landed in Jezero crater. */
     public static final long JEZERO_SIM_SEED = 2021L;
+    /** The second site (ticket 32), for the second rover. */
+    public static final SiteInfo GALE_SIM = new SiteInfo(
+            "gale-sim", "Gale Crater (simulated)", 64, 64, 1.0, 0.0, 5.0, 20, 40);
+    /** 2012: the year Curiosity landed in Gale crater. */
+    public static final long GALE_SIM_SEED = 2012L;
+    /** Every shipped site and its seed. */
+    public static final Map<SiteInfo, Long> SHIPPED = Map.of(JEZERO_SIM, JEZERO_SIM_SEED, GALE_SIM, GALE_SIM_SEED);
 
     private static final int LANDING_CLEAR_RADIUS = 3;
     private static final int LANDING_FLAT_RADIUS = 5;
@@ -33,17 +41,19 @@ public final class TerrainGenerator {
     private static final double RIM_ROCK_PROBABILITY = 0.10;
 
     /**
-     * Regenerates the default site. Usage: {@code TerrainGenerator <output folder>}, e.g.
-     * {@code redlink-contract/src/main/resources/sites/jezero-sim}.
+     * Regenerates a shipped site. Usage: {@code TerrainGenerator <site id> <output folder>}, e.g.
+     * {@code gale-sim redlink-contract/src/main/resources/sites/gale-sim}.
      */
     public static void main(String[] args) {
-        if (args.length != 1) {
-            System.err.println("Usage: TerrainGenerator <output folder>");
+        SiteInfo site = args.length != 2 ? null
+                : SHIPPED.keySet().stream().filter(s -> s.id().equals(args[0])).findFirst().orElse(null);
+        if (site == null) {
+            System.err.println("Usage: TerrainGenerator <jezero-sim|gale-sim> <output folder>");
             System.exit(2);
         }
-        Path output = Path.of(args[0]);
-        TerrainWriter.write(generate(JEZERO_SIM, JEZERO_SIM_SEED), output);
-        System.out.println("Wrote " + JEZERO_SIM.id() + " to " + output.toAbsolutePath());
+        Path output = Path.of(args[1]);
+        TerrainWriter.write(generate(site, SHIPPED.get(site)), output);
+        System.out.println("Wrote " + site.id() + " to " + output.toAbsolutePath());
     }
 
     public static Terrain generate(SiteInfo site, long seed) {

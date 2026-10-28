@@ -29,9 +29,11 @@ class TerrainLoaderTest {
     }
 
     @Test
-    void shippedDefaultSiteMatchesTheGenerator() {
+    void shippedSitesMatchTheGenerator() {
         // Fails if someone edits the committed files or the generator without regenerating.
         assertThat(TerrainLoader.fromClasspath("jezero-sim")).isEqualTo(GENERATED);
+        assertThat(TerrainLoader.fromClasspath("gale-sim"))
+                .isEqualTo(TerrainGenerator.generate(TerrainGenerator.GALE_SIM, TerrainGenerator.GALE_SIM_SEED));
     }
 
     @Test

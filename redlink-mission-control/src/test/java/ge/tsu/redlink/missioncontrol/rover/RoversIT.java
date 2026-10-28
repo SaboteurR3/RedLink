@@ -72,8 +72,11 @@ class RoversIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(1))
                 .andExpect(jsonPath("$.content[0].lastKnown.reportedAt").doesNotExist())
+                // Rover 2 on its own site (ticket 32).
+                .andExpect(jsonPath("$.content[1].id").value(2))
+                .andExpect(jsonPath("$.content[1].siteId").value("gale-sim"))
                 .andExpect(jsonPath("$.page.size").value(20))
-                .andExpect(jsonPath("$.page.totalElements").value(1));
+                .andExpect(jsonPath("$.page.totalElements").value(2));
     }
 
     @Test

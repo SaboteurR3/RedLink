@@ -86,7 +86,7 @@ public class UplinkTransmitter {
             command.transmit(sequenceNo, now);
 
             CommandPacket packet = new CommandPacket(UUID.randomUUID(), command.getRoverId(), command.getId(), sequenceNo,
-                    jsonMapper.readValue(command.getCommand(), RoverCommand.class), now);
+                    jsonMapper.readValue(command.getCommand(), RoverCommand.class), now, command.getTraceParent());
             Instant arrival = now.plus(properties.oneWayDelay());
             jdbc.sql("""
                             INSERT INTO uplink_packets (packet_id, command_id, rover_id, packet, created_at, deliver_at, next_attempt_at)

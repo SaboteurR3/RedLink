@@ -100,6 +100,10 @@ public class Command {
     @Column(name = "mission_step", updatable = false)
     private Integer missionStep;
 
+    /** W3C traceparent of the request that created it; the uplink continues this trace. */
+    @Column(name = "trace_parent", length = 55, updatable = false)
+    private String traceParent;
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -113,6 +117,12 @@ public class Command {
         this.createdBy = createdBy;
         this.createdAt = now;
         this.updatedAt = now;
+    }
+
+    /** Remembers the trace this command was created in (before it is first saved). */
+    public Command tracedAs(String traceparent) {
+        this.traceParent = traceparent;
+        return this;
     }
 
     /** Step {@code step} (one-based) of mission {@code missionId}. */

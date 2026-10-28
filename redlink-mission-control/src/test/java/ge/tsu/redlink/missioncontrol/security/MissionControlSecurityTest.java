@@ -6,6 +6,7 @@ import ge.tsu.redlink.missioncontrol.TimeConfig;
 import ge.tsu.redlink.missioncontrol.auth.AuthController;
 import ge.tsu.redlink.missioncontrol.auth.AuthService;
 import ge.tsu.redlink.missioncontrol.auth.LoginThrottle;
+import ge.tsu.redlink.missioncontrol.auth.LoginThrottledException;
 import ge.tsu.redlink.missioncontrol.auth.TokenService;
 import ge.tsu.redlink.missioncontrol.events.StreamTickets;
 import ge.tsu.redlink.missioncontrol.link.LinkSecurityConfig;
@@ -40,6 +41,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
@@ -51,6 +53,8 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
@@ -62,11 +66,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * The whole security setup through real HTTP requests (MockMvc): login, tokens, roles, CORS,
- * headers and link authentication. The user table is mocked, so no database is needed.
+ * headers and link authentication. The user table and the login throttle are mocked, so no
+ * database is needed.
  */
 @WebMvcTest(controllers = {AuthController.class, MissionControlSecurityTest.ProbeController.class})
 @Import({SecurityConfig.class, LinkSecurityConfig.class, TimeConfig.class, ProblemResponses.class,
-        TokenService.class, AuthService.class, LoginThrottle.class, UserAccountDetailsService.class, StreamTickets.class,
+        TokenService.class, AuthService.class, UserAccountDetailsService.class, StreamTickets.class,
         // Explicit: Boot's test scanning skips classes nested in test classes.
         MissionControlSecurityTest.ProbeController.class})
 @ActiveProfiles("test")
@@ -86,6 +91,9 @@ class MissionControlSecurityTest {
 
     @MockitoBean
     UserAccountRepository users;
+    /** Kept in the database (ticket 34, tested in LoginThrottleIT); here only its HTTP answer is tested. */
+    @MockitoBean
+    LoginThrottle loginThrottle;
 
     @BeforeEach
     void users() {
@@ -135,27 +143,23 @@ class MissionControlSecurityTest {
         }
 
         @Test
-        void sixthFailedAttemptIsThrottledEvenWithTheRightPassword() throws Exception {
-            RequestPostProcessor attacker = clientIp("10.0.0.66");
-            for (int i = 0; i < 5; i++) {
-                mvc.perform(login("viewer", "guess-" + i).with(attacker)).andExpect(status().isUnauthorized());
-            }
+        void aThrottledClientGets429WithRetryAfterEvenWithTheRightPassword() throws Exception {
+            doThrow(new LoginThrottledException(Duration.ofMinutes(15))).when(loginThrottle).checkAllowed("viewer", "10.0.0.66");
 
-            mvc.perform(login("viewer", "guess-6").with(attacker))
+            mvc.perform(login("viewer", PASSWORD).with(clientIp("10.0.0.66")))
                     .andExpect(status().isTooManyRequests())
                     .andExpect(header().string(HttpHeaders.RETRY_AFTER, "900"))
+                    .andExpect(content().contentType(PROBLEM_JSON))
                     .andExpect(jsonPath("$.type").value("https://redlink.example/problems/too-many-login-attempts"));
-            mvc.perform(login("viewer", PASSWORD).with(attacker)).andExpect(status().isTooManyRequests());
         }
 
         @Test
-        void throttlingIsPerClientSoTheRealUserIsNotLockedOut() throws Exception {
-            RequestPostProcessor attacker = clientIp("10.0.0.77");
-            for (int i = 0; i < 6; i++) {
-                mvc.perform(login("flight_director", "guess-" + i).with(attacker));
-            }
+        void failuresAndSuccessesAreReportedPerUserAndClient() throws Exception {
+            mvc.perform(login("operator", "nope").with(clientIp("10.0.0.5"))).andExpect(status().isUnauthorized());
+            verify(loginThrottle).recordFailure("operator", "10.0.0.5");
 
-            mvc.perform(login("flight_director", PASSWORD).with(clientIp("10.0.0.78"))).andExpect(status().isOk());
+            mvc.perform(login("operator", PASSWORD).with(clientIp("10.0.0.5"))).andExpect(status().isOk());
+            verify(loginThrottle).recordSuccess("operator", "10.0.0.5");
         }
 
         @Test

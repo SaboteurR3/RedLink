@@ -1,5 +1,7 @@
 package ge.tsu.redlink.missioncontrol.dsn;
 
+import ge.tsu.redlink.missioncontrol.audit.AuditAction;
+import ge.tsu.redlink.missioncontrol.audit.AuditLog;
 import ge.tsu.redlink.missioncontrol.dsn.LinkDtos.ConjunctionResponse;
 import ge.tsu.redlink.missioncontrol.dsn.LinkDtos.LinkStatus;
 import ge.tsu.redlink.missioncontrol.dsn.LinkDtos.WindowStatus;
@@ -37,6 +39,7 @@ public class DsnService {
     private final DsnProperties properties;
     private final UplinkProperties uplink;
     private final Clock clock;
+    private final AuditLog audit;
 
     /** Commands may leave Earth now: a window is open and the Sun is not in the way. */
     @Transactional(readOnly = true)
@@ -84,6 +87,8 @@ public class DsnService {
         Instant now = now();
         if (state.setConjunction(active, user, now)) {
             states.saveAndFlush(state);
+            audit.record(user, active ? AuditAction.CONJUNCTION_DECLARED : AuditAction.CONJUNCTION_ENDED,
+                    "link:conjunction", null);
             log.warn("{} {} the solar conjunction", user, active ? "started" : "ended");
             LinkStatus status = status(state, now);
             for (Rover rover : rovers.findAll()) {
@@ -95,7 +100,7 @@ public class DsnService {
 
     private LinkStatus status(LinkState state, Instant now) {
         LinkWindows.Window window = LinkWindows.at(properties.windows(), now);
-        return new LinkStatus(uplink.oneWayDelay().toSeconds(),
+        return new LinkStatus(uplink.oneWayDelay().toSeconds(), uplink.queueHold().toSeconds(),
                 new WindowStatus(properties.windows().enabled(), window.open(), window.nextChangeAt()),
                 ConjunctionResponse.of(state), window.open() && !state.isConjunctionActive());
     }

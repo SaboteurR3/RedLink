@@ -1,13 +1,13 @@
 import { Line } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef, type ComponentRef } from 'react';
-import { QuadraticBezierCurve3, Vector3, type Group, type Mesh, type MeshBasicMaterial } from 'three';
+import { DoubleSide, QuadraticBezierCurve3, Vector3, type Group, type Mesh, type MeshBasicMaterial } from 'three';
 import type { Heading, Photo, UplinkTransmission } from '../api/types';
 import { beamProgress, cellHeight, cellToWorld, headingToYaw, type Grid } from './geometry';
 import { RoverBody } from './RoverModel';
 
 /** Where the signal comes from: high in the sky, towards Earth. */
-const EARTH = new Vector3(-70, 110, -140);
+export const EARTH = new Vector3(-70, 110, -140);
 /** How long an arrived beam stays visible while it fades. */
 const FADE_MS = 1500;
 
@@ -88,6 +88,30 @@ export function Ghost({ grid, x, y, heading }: { grid: Grid; x: number; y: numbe
   return (
     <group position={[wx, cellHeight(grid, x, y), wz]} rotation-y={headingToYaw(heading)}>
       <RoverBody ghost />
+    </group>
+  );
+}
+
+/** Horizontal field of view of each camera, as the rover's photo renderer uses it. */
+const CAMERA_FOV_DEGREES = { NAVCAM: 90, MASTCAM: 40 } as const;
+const CONE_LENGTH = 9;
+const MAST_HEIGHT = 1.5;
+
+/** What a photo saw: the camera's field of view from where it was taken, the way it looked. */
+export function PhotoCone({ grid, x, y, heading, camera }: { grid: Grid; x: number; y: number; heading: Heading; camera: Photo['camera'] }) {
+  const [wx, wz] = cellToWorld(grid, x, y);
+  const radius = CONE_LENGTH * Math.tan(((CAMERA_FOV_DEGREES[camera] / 2) * Math.PI) / 180);
+  return (
+    <group position={[wx, cellHeight(grid, x, y) + MAST_HEIGHT, wz]} rotation-y={headingToYaw(heading)}>
+      {/* A four-sided pyramid: apex at the camera, base ahead of it (north is −z). */}
+      <mesh position={[0, 0, -CONE_LENGTH / 2]} rotation={[Math.PI / 2, Math.PI / 4, 0]}>
+        <coneGeometry args={[radius * Math.SQRT2, CONE_LENGTH, 4, 1, true]} />
+        <meshBasicMaterial color="#58a6ff" transparent opacity={0.18} depthWrite={false} side={DoubleSide} />
+      </mesh>
+      <mesh position={[0, 0, -CONE_LENGTH / 2]} rotation={[Math.PI / 2, Math.PI / 4, 0]}>
+        <coneGeometry args={[radius * Math.SQRT2, CONE_LENGTH, 4, 1, true]} />
+        <meshBasicMaterial color="#9fd0ff" wireframe transparent opacity={0.6} />
+      </mesh>
     </group>
   );
 }

@@ -18,6 +18,8 @@ public enum EventType {
     ROVER_EVENT("rover-event"),
     /** A photo arrived: its metadata ({@code PhotoResponse}). */
     PHOTO("photo"),
+    /** A drill sample was taken: {@link SampleMessage}. */
+    SAMPLE("sample"),
     /** The link changed (a solar conjunction began or ended): {@code LinkStatus}; sent to every rover. */
     LINK("link"),
     /** The resume point is too old; carries a fresh rover snapshot. Clients should reload. */

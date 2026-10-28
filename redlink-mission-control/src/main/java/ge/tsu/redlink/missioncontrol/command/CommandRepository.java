@@ -13,7 +13,7 @@ public interface CommandRepository extends JpaRepository<Command, Long> {
 
     Page<Command> findByRoverIdAndStatus(long roverId, CommandStatus status, Pageable pageable);
 
-    boolean existsByRoverIdAndStatusIn(long roverId, Collection<CommandStatus> statuses);
+    List<Command> findTop20ByRoverIdAndStatusInOrderByIdAsc(long roverId, Collection<CommandStatus> statuses);
 
     List<Command> findByMissionIdInOrderByMissionIdAscMissionStepAsc(Collection<Long> missionIds);
 }

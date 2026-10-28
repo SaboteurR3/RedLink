@@ -163,6 +163,63 @@ class MissionsIT {
     }
 
     @Test
+    void previewShowsThePathAndChangesNothing() throws Exception {
+        preview("{\"steps\":[{\"type\":\"ROTATE\",\"heading\":\"EAST\"},{\"type\":\"TAKE_PHOTO\",\"camera\":\"NAVCAM\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$.feasible").value(true))
+                .andExpect(jsonPath("$.path.length()").value(3))
+                .andExpect(jsonPath("$.path[0].step").value(-1))
+                .andExpect(jsonPath("$.end.heading").value("EAST"))
+                .andExpect(jsonPath("$.marsSeconds").value(2.0 + 3.0))
+                .andExpect(jsonPath("$.problem").doesNotExist())
+                .andExpect(jsonPath("$.roverBusy").value(false));
+        assertThat(count("commands")).isZero();
+        assertThat(count("missions")).isZero();
+    }
+
+    @Test
+    void previewMarksWhereADriveWouldFail() throws Exception {
+        int[] cell = cellSouthOfARock();
+        placeRover(cell[0], cell[1], "NORTH");
+
+        preview("{\"steps\":[{\"type\":\"TAKE_PHOTO\",\"camera\":\"NAVCAM\"},{\"type\":\"MOVE\",\"distanceMeters\":3}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.feasible").value(false))
+                .andExpect(jsonPath("$.problem.step").value(2))
+                .andExpect(jsonPath("$.problem.x").value(cell[0]))
+                .andExpect(jsonPath("$.problem.y").value(cell[1] - 1))
+                .andExpect(jsonPath("$.marsSeconds").value(3.0));
+    }
+
+    @Test
+    void routeToACellComesWithItsPreviewAndUnreachableCellsAre422() throws Exception {
+        String body = mvc.perform(post("/api/v1/rovers/1/routes").header(HttpHeaders.AUTHORIZATION, viewer)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"x\":32,\"y\":29}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$.steps[0].type").value("MOVE"))
+                .andExpect(jsonPath("$.preview.feasible").value(true))
+                .andExpect(jsonPath("$.preview.end.x").value(32))
+                .andExpect(jsonPath("$.preview.end.y").value(29))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(body).contains("\"distanceMeters\":3");
+
+        int[] rock = cellSouthOfARock();
+        mvc.perform(post("/api/v1/rovers/1/routes").header(HttpHeaders.AUTHORIZATION, viewer)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"x\":" + rock[0] + ",\"y\":" + (rock[1] - 1) + "}"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("https://redlink.example/problems/no-route"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.endsWith("is a rock")));
+        mvc.perform(post("/api/v1/rovers/1/routes").header(HttpHeaders.AUTHORIZATION, viewer)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"x\":32,\"y\":32}"))
+                .andExpect(status().isUnprocessableContent());
+        mvc.perform(post("/api/v1/rovers/1/routes").header(HttpHeaders.AUTHORIZATION, viewer)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"x\":-1,\"y\":3}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void roverWithUnfinishedCommandsIsBusy() throws Exception {
         mvc.perform(post("/api/v1/rovers/1/commands").header(HttpHeaders.AUTHORIZATION, operator)
                 .header("Idempotency-Key", UUID.randomUUID().toString())
@@ -170,7 +227,12 @@ class MissionsIT {
 
         submit(UUID.randomUUID().toString(), SURVEY)
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("https://redlink.example/problems/rover-busy"));
+                .andExpect(jsonPath("$.type").value("https://redlink.example/problems/rover-busy"))
+                // Says what blocks, so the client can offer to cancel it.
+                .andExpect(jsonPath("$.blockingCommands.length()").value(1))
+                .andExpect(jsonPath("$.blockingCommands[0].type").value("REBOOT"))
+                .andExpect(jsonPath("$.blockingCommands[0].status").value("QUEUED"))
+                .andExpect(jsonPath("$.blockingCommands[0].cancellable").value(true));
     }
 
     @Test
@@ -335,6 +397,11 @@ class MissionsIT {
     private ResultActions submit(String key, String body) throws Exception {
         return mvc.perform(post("/api/v1/rovers/1/missions").header(HttpHeaders.AUTHORIZATION, operator)
                 .header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    private ResultActions preview(String body) throws Exception {
+        return mvc.perform(post("/api/v1/rovers/1/plan-previews").header(HttpHeaders.AUTHORIZATION, viewer)
                 .contentType(MediaType.APPLICATION_JSON).content(body));
     }
 

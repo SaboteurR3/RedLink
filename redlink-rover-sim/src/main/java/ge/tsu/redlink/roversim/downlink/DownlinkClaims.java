@@ -38,7 +38,8 @@ public class DownlinkClaims {
                             ORDER BY next_attempt_at, created_at
                             LIMIT :limit
                             FOR UPDATE SKIP LOCKED)
-                        RETURNING packet_id, packet::text AS packet, attempts, created_at""")
+                        RETURNING packet_id, packet::text AS packet, attempts, created_at,
+                                  packet ->> 'traceparent' AS traceparent""")
                 .param("now", Timestamp.from(now))
                 .param("leaseUntil", Timestamp.from(leaseUntil))
                 .param("limit", limit)
@@ -46,7 +47,8 @@ public class DownlinkClaims {
                         rs.getObject("packet_id", UUID.class),
                         rs.getString("packet"),
                         rs.getInt("attempts"),
-                        rs.getTimestamp("created_at").toInstant()))
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getString("traceparent")))
                 .list()
                 .stream()
                 .sorted(Comparator.comparing(ClaimedPacket::createdAt))
@@ -80,6 +82,7 @@ public class DownlinkClaims {
      * @param json     the stored packet exactly as it will be sent (and signed)
      * @param attempts including this one
      */
-    public record ClaimedPacket(UUID packetId, String json, int attempts, Instant createdAt) {
+    /** @param traceparent the trace the report belongs to, read from the packet itself (null if none) */
+    public record ClaimedPacket(UUID packetId, String json, int attempts, Instant createdAt, String traceparent) {
     }
 }

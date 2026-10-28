@@ -1,5 +1,10 @@
+import { parseLinkHeader } from './links';
 import type {
+  AuditEntry,
   Command,
+  CreatedWebhook,
+  Delivery,
+  CommandStatus,
   Conjunction,
   LinkStatus,
   Me,
@@ -7,12 +12,16 @@ import type {
   MissionRequest,
   Page,
   Photo,
+  PlanPreview,
   Problem,
   Rover,
   RoverCommand,
+  RouteProposal,
   Site,
+  Specs,
   Tagged,
   Ticket,
+  Webhook,
 } from './types';
 
 /** An API error, carrying the server's RFC 9457 problem. */
@@ -76,6 +85,10 @@ export class ApiClient {
     return this.request('/api/v1/auth/me');
   }
 
+  rovers(): Promise<Page<Rover>> {
+    return this.request('/api/v1/rovers?size=100');
+  }
+
   rover(roverId: number): Promise<Rover> {
     return this.request(`/api/v1/rovers/${roverId}`);
   }
@@ -84,8 +97,27 @@ export class ApiClient {
     return this.request(`/api/v1/sites/${encodeURIComponent(siteId)}`);
   }
 
-  commands(roverId: number, size = 50): Promise<Page<Command>> {
-    return this.request(`/api/v1/rovers/${roverId}/commands?size=${size}`);
+  commands(roverId: number, size = 50, status?: CommandStatus): Promise<Page<Command>> {
+    const filter = status ? `&status=${status}` : '';
+    return this.request(`/api/v1/rovers/${roverId}/commands?size=${size}${filter}`);
+  }
+
+  command(commandId: number): Promise<Command> {
+    return this.request(`/api/v1/commands/${commandId}`);
+  }
+
+  specs(): Promise<Specs> {
+    return this.request('/api/v1/specs');
+  }
+
+  /** Dry run: what these steps would do, by Earth's last knowledge. Sends nothing. */
+  preview(roverId: number, steps: RoverCommand[]): Promise<PlanPreview> {
+    return this.request(`/api/v1/rovers/${roverId}/plan-previews`, { method: 'POST', body: JSON.stringify({ steps }) });
+  }
+
+  /** The cheapest drive to a cell, as commands plus their preview. Sends nothing. */
+  route(roverId: number, x: number, y: number): Promise<RouteProposal> {
+    return this.request(`/api/v1/rovers/${roverId}/routes`, { method: 'POST', body: JSON.stringify({ x, y }) });
   }
 
   ticket(roverId: number): Promise<Ticket> {
@@ -152,8 +184,44 @@ export class ApiClient {
     return { body: (await response.json()) as Conjunction, etag: response.headers.get('ETag') };
   }
 
+  /** Telemetry history, newest first by Mars time. */
+  telemetry(roverId: number, type: string, size = 200): Promise<Page<{ roverTime: string; payload: unknown }>> {
+    return this.request(`/api/v1/rovers/${roverId}/telemetry?type=${type}&size=${size}`);
+  }
+
+  webhooks(): Promise<Webhook[]> {
+    return this.request('/api/v1/webhooks');
+  }
+
+  createWebhook(url: string, events: string[]): Promise<CreatedWebhook> {
+    return this.request('/api/v1/webhooks', { method: 'POST', body: JSON.stringify({ url, events }) });
+  }
+
+  /** 204 No Content: there is no body to read. */
+  async deleteWebhook(id: string): Promise<void> {
+    await this.send(`/api/v1/webhooks/${id}`, { method: 'DELETE' });
+  }
+
+  deliveries(webhookId: string): Promise<Page<Delivery>> {
+    return this.request(`/api/v1/webhooks/${webhookId}/deliveries?size=10`);
+  }
+
+  /** Queues a test delivery. */
+  async pingWebhook(id: string): Promise<void> {
+    await this.send(`/api/v1/webhooks/${id}/ping`, { method: 'POST' });
+  }
+
   missions(roverId: number, size = 10): Promise<Page<Mission>> {
     return this.request(`/api/v1/rovers/${roverId}/missions?size=${size}`);
+  }
+
+  /**
+   * One page of the audit log (flight directors). `path` is a first query, or a target from the
+   * previous page's `Link` header, so paging never builds URLs by hand.
+   */
+  async audit(path: string): Promise<{ page: Page<AuditEntry>; links: Record<string, string> }> {
+    const response = await this.send(path, {});
+    return { page: (await response.json()) as Page<AuditEntry>, links: parseLinkHeader(response.headers.get('Link')) };
   }
 
   private async postIdempotent<T>(path: string, payload: unknown, attempts: number): Promise<{ body: T; replayed: boolean }> {

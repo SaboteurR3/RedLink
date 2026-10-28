@@ -27,7 +27,8 @@ import jakarta.validation.constraints.Size;
         @JsonSubTypes.Type(value = TelemetryPayload.CommandStatus.class, name = "COMMAND_STATUS"),
         @JsonSubTypes.Type(value = TelemetryPayload.RoverState.class, name = "ROVER_STATE"),
         @JsonSubTypes.Type(value = TelemetryPayload.Event.class, name = "EVENT"),
-        @JsonSubTypes.Type(value = TelemetryPayload.Photo.class, name = "PHOTO")
+        @JsonSubTypes.Type(value = TelemetryPayload.Photo.class, name = "PHOTO"),
+        @JsonSubTypes.Type(value = TelemetryPayload.Sample.class, name = "SAMPLE")
 })
 public sealed interface TelemetryPayload {
 
@@ -115,6 +116,25 @@ public sealed interface TelemetryPayload {
         /** The same report without the image, for places that keep only the metadata. */
         public Photo withoutImage() {
             return new Photo(commandId, camera, x, y, heading, null);
+        }
+    }
+
+    /**
+     * @param commandId the DRILL_SAMPLE command that took it
+     * @param material  ROCK when the rover faced a rock, otherwise SOIL from just in front of it
+     * @param x         where the rover stood, like {@link RoverState}; a rock sample comes from the
+     *                  next cell in {@code heading}
+     */
+    record Sample(
+            @Positive long commandId,
+            @NotNull SampleMaterial material,
+            @PositiveOrZero int x,
+            @PositiveOrZero int y,
+            @NotNull Heading heading) implements TelemetryPayload {
+
+        @Override
+        public TelemetryType type() {
+            return TelemetryType.SAMPLE;
         }
     }
 }

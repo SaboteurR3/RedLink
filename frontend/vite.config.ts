@@ -7,8 +7,9 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   build: {
-    // The 3D scene chunk (three.js, ~250 kB gzipped) is lazy-loaded on purpose; the main bundle stays small.
-    chunkSizeWarningLimit: 1000,
+    // The 3D scene chunk (three.js + post-processing, ~280 kB gzipped) is lazy-loaded on purpose;
+    // the main bundle stays small.
+    chunkSizeWarningLimit: 1200,
   },
   server: {
     port: 5173,

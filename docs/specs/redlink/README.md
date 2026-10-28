@@ -27,6 +27,21 @@ independently buildable and testable. Status values: `todo`, `in-progress`, `rea
 | 20 | [Full-stack Docker Compose + end-to-end test](tickets/20-full-stack-compose-e2e.md) | ready-for-human |
 | 21 | [Write-up and demo script](tickets/21-write-up.md) | ready-for-human |
 | 22 | [QA pass (end to end) + product guide](tickets/22-qa-pass.md) | ready-for-human |
+| 23 | [CI on GitHub Actions](tickets/23-ci.md) | ready-for-human |
+| 24 | [UX quick wins: blocking reasons, director inbox, toasts, smarter console](tickets/24-ux-quick-wins.md) | ready-for-human |
+| 25 | [Path preview (dry run) shown on the terrain](tickets/25-path-preview.md) | ready-for-human |
+| 26 | [Click-to-drive with route planning](tickets/26-click-to-drive.md) | ready-for-human |
+| 27 | [Missions panel, photo viewer, webhooks page, first-visit hints](tickets/27-panels.md) | ready-for-human |
+| 28 | [Telemetry charts](tickets/28-charts.md) | ready-for-human |
+| 29 | [3D wow I: sol cycle, sky, tracks, rover animations, post-processing](tickets/29-3d-wow-1.md) | ready-for-human |
+| 30 | [3D wow II: intro flight, relay orbiter, dust storm, minimap, photo cones, alerts](tickets/30-3d-wow-2.md) | ready-for-human |
+| 31 | [REST extras: Link paging headers, rate limiting, audit log](tickets/31-rest-extras.md) | ready-for-human |
+| 32 | [Multiple rovers](tickets/32-multi-rover.md) | ready-for-human |
+| 33 | [Distributed tracing across the link](tickets/33-tracing.md) | ready-for-human |
+| 34 | [Multi-instance live updates (LISTEN/NOTIFY)](tickets/34-multi-instance-sse.md) | ready-for-human |
+| 35 | [Bigger, more beautiful terrain](tickets/35-bigger-terrain.md) | ready-for-human |
+| 36 | [Shining night sky and a more beautiful intro](tickets/36-night-sky-and-intro.md) | ready-for-human |
+| 37 | [Drill samples: rock or soil, with a mark on the map](tickets/37-drill-samples.md) | ready-for-human |
 
 Tickets 02–21 are outlines. Each one is detailed (scope, acceptance criteria, testing) when it
 is picked up, so it reflects what the earlier tickets actually produced.

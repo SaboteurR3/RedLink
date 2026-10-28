@@ -1,6 +1,6 @@
 import type { ApiClient } from './client';
 
-export const STREAM_EVENTS = ['rover', 'command', 'uplink', 'rover-event', 'photo', 'link', 'reset'] as const;
+export const STREAM_EVENTS = ['rover', 'command', 'uplink', 'rover-event', 'photo', 'sample', 'link', 'reset'] as const;
 export type StreamEventName = (typeof STREAM_EVENTS)[number];
 export type StreamStatus = 'connecting' | 'live' | 'reconnecting' | 'stopped';
 
@@ -64,7 +64,8 @@ export class RoverStream {
     let url: string;
     try {
       const ticket = await this.api.ticket(this.roverId);
-      url = this.lastEventId === null ? ticket.streamUrl : `${ticket.streamUrl}&lastEventId=${encodeURIComponent(this.lastEventId)}`;
+      url =
+        this.lastEventId === null ? ticket.streamUrl : `${ticket.streamUrl}&lastEventId=${encodeURIComponent(this.lastEventId)}`;
     } catch (error) {
       if ((error as { status?: number }).status === 401) {
         this.handlers.onAuthError();

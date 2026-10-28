@@ -205,7 +205,7 @@ public class SecurityConfig {
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, HttpHeaders.ACCEPT,
                 HttpHeaders.IF_MATCH, HttpHeaders.IF_NONE_MATCH, "Idempotency-Key", "Last-Event-ID"));
-        cors.setExposedHeaders(List.of(HttpHeaders.LOCATION, HttpHeaders.ETAG, HttpHeaders.RETRY_AFTER,
+        cors.setExposedHeaders(List.of(HttpHeaders.LOCATION, HttpHeaders.ETAG, HttpHeaders.RETRY_AFTER, HttpHeaders.LINK,
                 "Idempotent-Replayed"));
         // Tokens travel in the Authorization header, never in cookies.
         cors.setAllowCredentials(false);

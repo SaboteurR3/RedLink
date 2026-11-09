@@ -2,125 +2,94 @@
 
 [![CI](https://github.com/SaboteurR3/RedLink/actions/workflows/ci.yml/badge.svg)](https://github.com/SaboteurR3/RedLink/actions/workflows/ci.yml)
 
-An asynchronous REST platform for commanding a simulated Mars rover over a delayed deep-space link.
+**Mission control for a Mars rover, as a REST web service.**
 
-Operators on Earth send commands through a REST API. Each command travels over a simulated link
-with real delay, a separate rover program executes it, and the result comes back as delayed
-telemetry. The same pattern runs remote command-and-control for drones, IoT devices, EV chargers
-and satellites; Mars is the extreme case.
+You sit at mission control on Earth and drive a rover on Mars: turn it, drive it around rocks and
+craters, take photos, drill samples, keep its battery charged. The catch is the same one NASA has:
+**Mars is far away.** Every command takes time to get there, the rover carries it out on its own,
+and you only find out what happened when its report comes back. You never see the rover live — only
+what it last told you.
 
-- Architecture: [docs/specs/redlink/SPEC.md](docs/specs/redlink/SPEC.md)
-- **Product guide** (what RedLink does, its rules, and a test-it-yourself checklist): [docs/GUIDE.md](docs/GUIDE.md)
-- **Write-up** (the nine design chapters, limits and future work): [docs/writeup/WRITEUP.md](docs/writeup/WRITEUP.md)
-- **Demo script** (15 minutes; its curl scenes dry-run against the running apps): [docs/writeup/DEMO.md](docs/writeup/DEMO.md)
-- Decision records: [docs/adr/](docs/adr)
-- Tickets and progress: [docs/specs/redlink/README.md](docs/specs/redlink/README.md)
+The rover is simulated, but the problems are real ones, and solving them properly is what this
+project is about:
 
-## Repository layout
+- **Nothing happens instantly.** Sending a command answers `202 Accepted`, not "done". The command
+  is queued, transmitted, executed and reported back, and the screen follows each step live.
+- **Messages get lost or arrive twice.** Every hop is retried until it succeeds, and every receiver
+  ignores duplicates, so a command never runs twice and no report is ever lost.
+- **Nobody can be trusted blindly.** Users log in with roles, risky commands (drilling) need a second
+  person's approval, and the rover only obeys messages signed with a shared secret.
+- **The link can go down.** During a solar conjunction the Sun blocks the signal; everything waits
+  and resumes without losing anything.
 
-| Path | What |
+The same pattern runs remote control of drones, satellites, IoT devices and EV chargers — Mars is
+just the extreme case. RedLink was built as a Master's project for a web-services course at TSU.
+
+## What you can do
+
+- **Drive the rover** on a 3D model of its landing site (Jezero or Gale crater): move, rotate, or
+  click a spot on the map and let the planner find a safe route.
+- **Plan missions** of up to 20 steps; the plan is simulated before it is sent, so you see where the
+  rover will end up and what would fail.
+- **Take photos** and **drill rock or soil samples**; photos are drawn from what the rover sees.
+- **Watch the rover's world**: battery, day and night (solar charging only works in daylight), dust
+  storms, safe mode after a crash.
+- **Work as a team**: viewers watch, operators command, flight directors approve drills and declare
+  link outages; everything is audited.
+- **Get notified**: register a webhook and your own system is called when a command finishes or the
+  rover is in trouble.
+
+## How it is built
+
+```
+  Browser (React + 3D)  ──REST + live events──►  mission-control (Earth)  ◄──signed packets, delayed──►  rover-sim (Mars)
+                                                  Spring Boot + PostgreSQL                               Spring Boot + PostgreSQL
+```
+
+| Part | What it is |
 |---|---|
-| `redlink-contract/` | Command and telemetry dictionaries shared by both apps (plain jar) |
-| `redlink-mission-control/` | Earth: public REST API, Spring Boot, port 8080 |
-| `redlink-rover-sim/` | Mars: rover flight software simulator, Spring Boot, port 8081 |
-| `frontend/` | Mission-control UI (React + Vite + React Three Fiber), nginx image |
-| `docker/`, `docker-compose.yml`, `*/Dockerfile` | The full stack in containers |
-| `scripts/` | Local database setup, end-to-end test (`e2e.mjs`) |
-| `docs/` | Spec, tickets, decision records |
+| `redlink-mission-control/` | Earth: the public REST API, users and roles, command queue, telemetry, live updates, webhooks (port 8080) |
+| `redlink-rover-sim/` | Mars: the rover's flight software — executes commands on the terrain and reports back (port 8081) |
+| `redlink-contract/` | The shared "language": command and telemetry formats, rover specs, the terrain maps |
+| `frontend/` | The mission-control screen: React, with the 3D view in three.js |
 
-## Requirements
+Java 17, Spring Boot 4, Spring Security, PostgreSQL with Flyway, React 19 and Vite.
 
-Java 17+ and Node 22 for development; Docker for the full stack (and optionally for Postgres and the
-integration tests). Maven comes with the wrapper.
+## Run it
 
-## Run everything with Docker
+You need **Java 17+**, **Node 22** and **PostgreSQL**.
 
-```sh
-cp .env.example .env    # set the passwords and the three secrets (openssl rand -base64 32)
-docker compose up --build
-```
+1. Create the two databases (once):
+   ```sh
+   psql -U postgres -f scripts/local-db-setup.sql
+   ```
+2. Start Earth and Mars (two terminals, or run both apps from your IDE with the `local` profile):
+   ```sh
+   ./mvnw install -DskipTests
+   ./mvnw -pl redlink-mission-control spring-boot:run -Dspring-boot.run.profiles=local
+   ./mvnw -pl redlink-rover-sim       spring-boot:run -Dspring-boot.run.profiles=local
+   ```
+3. Start the screen:
+   ```sh
+   cd frontend
+   npm install
+   npm run dev
+   ```
+4. Open <http://localhost:5173> and log in with password `redlink-dev` as **`viewer`**,
+   **`operator`** or **`director`**.
 
-Open <http://localhost:8088> and log in as `viewer`, `operator` or `director` with
-`REDLINK_DEMO_USERS_PASSWORD`. nginx serves the UI and proxies `/api`, `/v3/api-docs` and
-`/swagger-ui` to mission-control, so <http://localhost:8088/swagger-ui.html> works too. Only port
-8088 is published (on localhost); the apps and the HMAC link endpoints stay on the internal network.
-The images build inside Docker, so nothing but Docker is needed on the host.
+API documentation: <http://localhost:8080/swagger-ui.html>.
 
-## Run locally
+Docker, configuration, tests and other options: [docs/RUNNING.md](docs/RUNNING.md).
 
-```sh
-cp .env.example .env                 # then edit the passwords
-docker compose up -d                 # PostgreSQL with databases mission_control and rover
+## Read more
 
-./mvnw -pl redlink-mission-control spring-boot:run -Dspring-boot.run.profiles=local
-./mvnw -pl redlink-rover-sim       spring-boot:run -Dspring-boot.run.profiles=local
-```
-
-Run `./mvnw install -DskipTests` once first so the apps can resolve `redlink-contract`.
-
-Health: <http://localhost:8080/actuator/health> and <http://localhost:8081/actuator/health>.
-
-No Docker? Create the databases on a locally installed PostgreSQL instead:
-`psql -U postgres -f scripts/local-db-setup.sql`.
-
-The `local` profile creates three users, all with the password `redlink-dev`:
-`viewer` (VIEWER), `operator` (OPERATOR) and `director` (FLIGHT_DIRECTOR).
-
-```sh
-curl -s -H 'Content-Type: application/json' \
-     -d '{"username":"operator","password":"redlink-dev"}' \
-     http://localhost:8080/api/v1/auth/token
-# → {"access_token":"eyJ...","token_type":"Bearer","expires_in":900}
-
-curl -s -H "Authorization: Bearer <access_token>" http://localhost:8080/api/v1/auth/me
-```
-
-API documentation: <http://localhost:8080/swagger-ui.html> (log in with `POST /api/v1/auth/token`,
-then paste the token into "Authorize").
-
-Mission-control screen (needs both apps running):
-
-```sh
-cd frontend
-npm install
-npm run dev        # http://localhost:5173 — log in as operator / redlink-dev
-```
-
-## Configuration outside `local`
-
-| Variable | App | What |
-|---|---|---|
-| `MISSION_CONTROL_DB_URL`, `_USERNAME`, `_PASSWORD` | mission-control | Database |
-| `ROVER_DB_URL`, `_USERNAME`, `_PASSWORD` | rover-sim | Database |
-| `REDLINK_JWT_SECRET` | mission-control | base64, ≥ 32 bytes (`openssl rand -base64 32`) |
-| `REDLINK_LINK_SECRET` | both (same value) | base64, ≥ 32 bytes |
-| `REDLINK_CORS_ALLOWED_ORIGINS` | mission-control | comma-separated frontend origins |
-| `REDLINK_ROVER_URL` / `REDLINK_EARTH_URL` | mission-control / rover-sim | where the other side of the link is |
-| `REDLINK_DEMO_USERS_PASSWORD` | mission-control, `demo` profile | password of the seeded users (≥ 8 characters, no default) |
-
-The apps refuse to start if a secret is missing or too short.
-
-Without docker-compose, run `TestMissionControlApplication` / `TestRoverSimApplication`
-(under `src/test`) from the IDE: they start a throwaway Postgres with Testcontainers.
-
-## Build and test
-
-```sh
-./mvnw test                 # unit tests (*Test), no database needed
-./mvnw verify               # + integration tests (*IT) on a Testcontainers PostgreSQL (needs Docker)
-./mvnw verify -Plocal-db    # + integration tests on the local PostgreSQL instead (no Docker)
-```
-
-`-Plocal-db` uses the databases from `scripts/local-db-setup.sql`, in a separate schema `it`, so
-your development data is never touched.
-
-End-to-end, against a running system (Node 22, no dependencies):
-
-```sh
-REDLINK_URL=http://localhost:8088 REDLINK_PASSWORD=... node scripts/e2e.mjs   # docker compose
-REDLINK_URL=http://localhost:8080 node scripts/e2e.mjs                         # local apps (dev password)
-```
-
-It logs in, opens the event stream, plans a mission and waits until the rover has done it, then
-checks idempotent replay, 304s, the pushed events, the photo as PNG (and 406), and the error
-problems. Exit code 0 when all steps pass.
+| Document | For |
+|---|---|
+| [Product guide](docs/GUIDE.md) | What RedLink does, its rules, and a test-it-yourself checklist |
+| [How it works](docs/HOW-IT-WORKS.md) | Backend developers: modules, a command's path end to end, reliability patterns, real mission vs RedLink |
+| [API flows](docs/API-FLOWS.md) | Every API call step by step, with what the screen shows and all status codes |
+| [Running](docs/RUNNING.md) | Docker, configuration, tests, webhooks |
+| [Write-up](docs/writeup/WRITEUP.md) | The design chapters, limits and future work |
+| [Demo script](docs/writeup/DEMO.md) | A 15-minute demo |
+| [Architecture spec](docs/specs/redlink/SPEC.md), [decisions](docs/adr), [tickets](docs/specs/redlink/README.md) | How it was designed and built |

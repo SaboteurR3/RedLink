@@ -37,3 +37,17 @@ Frontend only.
 - Debugging note: a straight dark edge on Mars was the day/night line seen from the dark side, not
   a rendering bug (it went away with flat lighting). The fix was to end the flight on the sunlit side.
 - Bump maps were taken off the planets: on a sphere they leave a crease at the texture's seam.
+
+## Follow-up: the intro starts the moment you log in
+
+- **Problem (from the user):** sometimes the whole app showed first and the intro started later.
+- **Cause:** the intro was mounted by the map, which appears only after the rover and site have
+  loaded, and its code (three.js) was fetched lazily with nothing covering the page meanwhile.
+- **Fix:**
+  - `App` starts the intro (`components/IntroPlayer`) as soon as the login request succeeds; the
+    app loads beneath it;
+  - a black screen with the title covers the page while the intro's code arrives;
+  - the code is preloaded while the login form is shown;
+  - `components/viewPreference` holds the WebGL and saved-view checks, shared with `MapView`.
+- **Checked in the browser:** 0.4 s after clicking "Log in" the film is already playing, with
+  nothing of the app visible first. Vitest 62, type check and build green.

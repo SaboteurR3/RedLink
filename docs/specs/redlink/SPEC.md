@@ -268,7 +268,10 @@ PENDING_APPROVAL ──approve──► QUEUED ──dispatcher──► TRANSMI
 - **Truth:** the rover's real state lives only here (`rover_state`), with `@Version` optimistic
   locking.
 - **Photos:** `PhotoRenderer` draws a first-person voxel-space view with Java2D from the terrain
-  (1.8 m mast; NAVCAM 90° grayscale, MASTCAM 40° colour; 320×240), deterministic, no fonts. Sent
+  (1.8 m mast; NAVCAM 90° grayscale, MASTCAM 40° colour; 320×240), deterministic, no fonts. Rocks
+  are lumpy domes (0.3–0.7 m high, sized by the same per-cell hash as the 3D view), lit by a fixed sun
+  through the surface normal and casting shadows; colours blend between cells; beyond the map the
+  ground rolls on and rises towards the rim (ticket 40). Sent
   as a `PHOTO` telemetry packet (base64 PNG) in the TAKE_PHOTO step's transaction, before `COMPLETED`.
 - **Samples (ticket 37):** DRILL_SAMPLE cores the rock in the cell the rover faces if there is one,
   otherwise the soil in front of it (`FlightRules.sampleMaterial`). Sent as a `SAMPLE` telemetry

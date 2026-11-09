@@ -2,7 +2,8 @@
 
 This guide explains RedLink from the business side: who uses it, what they can do, which rules
 apply, and what you should see when you try it. No code knowledge is needed. At the end there is a
-checklist for testing it yourself.
+checklist for testing it yourself. For how the code works (modules, request flow, database,
+security), read [HOW-IT-WORKS.md](HOW-IT-WORKS.md).
 
 ---
 

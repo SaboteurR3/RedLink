@@ -44,7 +44,7 @@ independently buildable and testable. Status values: `todo`, `in-progress`, `rea
 | 37 | [Drill samples: rock or soil, with a mark on the map](tickets/37-drill-samples.md) | ready-for-human |
 | 38 | [Solar charging follows day and night](tickets/38-solar-day-night.md) | ready-for-human |
 | 39 | [Bigger drivable sites (128 × 128 m)](tickets/39-bigger-sites.md) | ready-for-human |
-| 40 | [Rocks in rover photos look like rocks, not cubes](tickets/40-realistic-photo-rocks.md) | todo |
+| 40 | [Rocks in rover photos look like rocks, not cubes](tickets/40-realistic-photo-rocks.md) | ready-for-human |
 
 Tickets 02–21 are outlines. Each one is detailed (scope, acceptance criteria, testing) when it
 is picked up, so it reflects what the earlier tickets actually produced.
